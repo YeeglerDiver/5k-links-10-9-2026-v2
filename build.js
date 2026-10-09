@@ -81,41 +81,36 @@ async function runBuild() {
   if (fs.existsSync(swPath)) {
     let swCode = fs.readFileSync(swPath, "utf8");
 
-    const swPatch = `
-      self.__scramjet$config = self.__scramjet$config || {
-        prefix: "${fullScramPrefix}",
-        codec: {
-          encode(str) {
-            if (!str) return str;
-            return encodeURIComponent(
-              str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
-            );
-          },
-          decode(str) {
-            if (!str) return str;
-            const [input, ...search] = str.split('?');
-            return decodeURIComponent(input)
-              .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
-              (search.length ? '?' + search.join('?') : '');
-          }
-        }
-      };
-
-      const originalIDBOpen = indexedDB.open.bind(indexedDB);
-      indexedDB.open = function(name, version) {
-        const req = originalIDBOpen(name, version);
-        req.addEventListener("upgradeneeded", (event) => {
-          const db = event.target.result;
-          const stores = ["config", "baremux", "sync", "settings", "__scramjet$config"];
-          for (const s of stores) {
-            if (!db.objectStoreNames.contains(s)) {
-              db.createObjectStore(s, { keyPath: "name" });
-            }
-          }
-        });
-        return req;
-      };
-    `;
+    const swPatch = [
+      'self.__scramjet$config = self.__scramjet$config || {',
+      '  prefix: "' + fullScramPrefix + '",',
+      '  codec: {',
+      '    encode(str) {',
+      '      if (!str) return str;',
+      '      return encodeURIComponent(str.split("").map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join(""));',
+      '    },',
+      '    decode(str) {',
+      '      if (!str) return str;',
+      '      const [input, ...search] = str.split("?");',
+      '      return decodeURIComponent(input).split("").map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join("") + (search.length ? "?" + search.join("?") : "");',
+      '    }',
+      '  }',
+      '};',
+      'const originalIDBOpen = indexedDB.open.bind(indexedDB);',
+      'indexedDB.open = function(name, version) {',
+      '  const req = originalIDBOpen(name, version);',
+      '  req.addEventListener("upgradeneeded", (event) => {',
+      '    const db = event.target.result;',
+      '    const stores = ["config", "baremux", "sync", "settings", "__scramjet$config"];',
+      '    for (const s of stores) {',
+      '      if (!db.objectStoreNames.contains(s)) {',
+      '        db.createObjectStore(s, { keyPath: "name" });',
+      '      }',
+      '    }',
+      '  });',
+      '  return req;',
+      '};'
+    ].join("\n");
 
     swCode = swPatch + "\n" + swCode;
     fs.writeFileSync(swPath, swCode);
@@ -160,4 +155,14 @@ async function runBuild() {
 </head>
 <body>
   <header>
-    <span class="badge">lyra
+    <span class="badge">lyraaaa /ᐠ - ˕ -マ</span>
+    <button class="btn-sync" id="sync-status">connecting...</button>
+  </header>
+
+  <main>
+    <div class="avatar-box">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+    </div>
+
+    <form class="search-wrapper" id="search-form">
+      <input type="text" id="search-bar"
