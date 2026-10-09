@@ -39,23 +39,32 @@ function downloadFile(url, dest) {
   });
 }
 
-function scanAndPatch(dir) {
+function patchCode(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      scanAndPatch(full);
+      patchCode(full);
     } else if (/\.(html|js|mjs|css)$/i.test(entry.name)) {
       let code = fs.readFileSync(full, "utf8");
-      code = code.replace(/(['"`])\/(assets|b|api|!cover!)\//g, `$1${repoPrefix}$2/`);
+
+      // Rewrite root-relative assets to repository path
+      code = code.replace(/(['"`])\/(assets|b|api|!cover!|controller\.sw\.js)\//g, `$1${repoPrefix}$2/`);
+      code = code.replace(/(['"`])\/controller\.sw\.js/g, `$1${repoPrefix}controller.sw.js`);
+
+      // Point backend POST /!!/ requests to the live upstream server instead of static GitHub Pages
+      code = code.replace(/(['"`])\/!!\//g, `$1${upstreamHost}/!!/`);
+
+      // Enforce live Wisp server
       code = code.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, "wss://wisp.mercurywork.shop/");
+
       fs.writeFileSync(full, code, "utf8");
     }
   }
 }
 
 async function runBuild() {
-  console.log("1. Mirroring initial production files...");
+  console.log("1. Mirroring root production files...");
   try {
     execSync(
       `wget --mirror --no-parent --convert-links --adjust-extension --page-requisites ` +
@@ -64,7 +73,7 @@ async function runBuild() {
       { stdio: "inherit" }
     );
   } catch (e) {
-    console.log("Initial mirror complete.");
+    console.log("Base mirror complete.");
   }
 
   const origHtml = path.join(distDir, "index.html");
@@ -87,173 +96,103 @@ async function runBuild() {
     process.exit(1);
   }
 
-  // Determine hash directory used by assets (e.g. 20f91fe9a88a)
-  let assetHashDir = "20f91fe9a88a";
-  const assetsParent = path.join(distDir, "assets");
-  if (fs.existsSync(assetsParent)) {
-    for (const d of fs.readdirSync(assetsParent)) {
-      if (fs.statSync(path.join(assetsParent, d)).isDirectory()) {
-        assetHashDir = d;
-        break;
-      }
+  // 2. Fetch the full chunk and asset manifest from the trace
+  const hashDir = "20f91fe9a88a";
+  const assetsTarget = path.join(distDir, "assets", hashDir);
+  fs.mkdirSync(assetsTarget, { recursive: true });
+
+  const chunkManifest = [
+    // JS Chunks
+    "UOdLBK0kdg2D.js", "BddaZkrO20eG.js", "DqtUK8-EIpN6.js", "G6bmQJ4LeSaU.js",
+    "B3CqrJhTi617.js", "CPZGefi03ZTl.js", "H_PjY6_iZLOx.js", "DK_3ESdGI_ak.js",
+    "C4jsyO_Hz52E.js", "DGv8aKp0GoXR.js", "CcLA70Nwdkej.js", "DEWLmYI_-C5q.js",
+    "CqmBnD6S4PLy.js", "DEz2lYRI65mJ.js", "Caj2LYFr3GhH.js", "Yf2u6mJbmdkN.js",
+    "qUxjXZz8bCeo.js", "B9AQkL5aXPLO.js", "DEJoJwj_TZi8.js", "CUbMlW6JiVjS.js",
+    "Dt5oErwtlMtc.js", "ytZeOYrVXsFe.js", "Dh8ztjyrItSJ.js", "MPKSK0Li_GTn.js",
+    "XIJNnfL8tqW0.js", "BKmok_OwGP0c.js",
+    // CSS Bundles
+    "Ds4AInl-voGA.css", "Cks2NftInTfc.css", "BgmhFvNNpqlE.css", "CvC0uaMeUIwq.css",
+    "B7iY9mVTBbSe.css", "mZjD-goPHC1N.css", "xjQkSKhQ6l0o.css", "DLxFS7yvUPGa.css",
+    "CkBwQCr_ktjH.css",
+    // WebP Images & Media
+    "BimkyYNarS_x.webp", "CI179FRhiUPm.webp", "BDxLTZBK0w1-.webp"
+  ];
+
+  console.log("2. Downloading all application chunks...");
+  for (const file of chunkManifest) {
+    const dest = path.join(assetsTarget, file);
+    if (!fs.existsSync(dest)) {
+      await downloadFile(`${upstreamHost}/assets/${hashDir}/${file}`, dest);
     }
   }
 
-  // 2. Recursive spider to catch ALL dynamic chunks
-  console.log(`2. Spidermining dynamic chunks for hash ${assetHashDir}...`);
-  const knownAssets = new Set([
-    // Explicit known failures from runtime logs
-    "DK_3ESdGI_ak.js",
-    "C4jsyO_Hz52E.js",
-    "DGv8aKp0GoXR.js",
-    "CcLA70Nwdkej.js",
-    "H_PjY6_iZLOx.js",
-    "BddaZkrO20eG.js",
-    "DqtUK8-EIpN6.js",
-    "DEWLmYI_-C5q.js",
-    "CqmBnD6S4PLy.js",
-    "DEz2lYRI65mJ.js",
-    "Caj2LYFr3GhH.js",
-    "Yf2u6mJbmdkN.js",
-    "qUxjXZz8bCeo.js",
-    "B9AQkL5aXPLO.js",
-    "DEJoJwj_TZi8.js",
-    "CUbMlW6JiVjS.js",
-    "G6bmQJ4LeSaU.js",
-    "BgmhFvNNpqlE.css",
-    "Ds4AInl-voGA.css",
-    "CvC0uaMeUIwq.css",
-    "B7iY9mVTBbSe.css",
-    "mZjD-goPHC1N.css",
-    "BimkyYNarS_x.webp",
-    "CI179FRhiUPm.webp"
-  ]);
-
-  const targetFolder = path.join(distDir, "assets", assetHashDir);
-  fs.mkdirSync(targetFolder, { recursive: true });
-
-  const chunkRegex = /[A-Za-z0-9_-]{12}\.(?:js|mjs|css|webp|png|wasm)/g;
-
-  let scannedFiles = new Set();
-  let queue = true;
-
-  while (queue) {
-    queue = false;
-    const currentFiles = [];
-
-    function collectJs(d) {
-      if (!fs.existsSync(d)) return;
-      for (const ent of fs.readdirSync(d, { withFileTypes: true })) {
-        const full = path.join(d, ent.name);
-        if (ent.isDirectory()) collectJs(full);
-        else if (/\.(js|mjs|html)$/i.test(ent.name) && !scannedFiles.has(full)) {
-          currentFiles.push(full);
-          scannedFiles.add(full);
-        }
-      }
-    }
-    collectJs(distDir);
-
-    for (const f of currentFiles) {
-      const content = fs.readFileSync(f, "utf8");
-      const matches = content.match(chunkRegex);
-      if (matches) {
-        for (const m of matches) {
-          if (!knownAssets.has(m)) {
-            knownAssets.add(m);
-            queue = true;
-          }
-        }
-      }
-    }
-
-    for (const file of knownAssets) {
-      const dest = path.join(targetFolder, file);
-      if (!fs.existsSync(dest)) {
-        const url = `${upstreamHost}/assets/${assetHashDir}/${file}`;
-        const ok = await downloadFile(url, dest);
-        if (ok) {
-          queue = true;
-          console.log(`Fetched asset: ${file}`);
-        }
-      }
-    }
+  // Fetch peaks background images
+  const peaksTarget = path.join(distDir, "assets", "images", "peaks");
+  fs.mkdirSync(peaksTarget, { recursive: true });
+  for (const img of ["azu.webp", "kona.webp", "hachii.webp"]) {
+    await downloadFile(`${upstreamHost}/assets/images/peaks/${img}`, path.join(peaksTarget, img));
   }
 
-  // 3. Fetch worker scripts (/b/)
-  console.log("3. Fetching worker scripts...");
-  const bFolder = path.join(distDir, "b");
-  fs.mkdirSync(bFolder, { recursive: true });
-  await downloadFile(`${upstreamHost}/b/61b104618b2c.js`, path.join(bFolder, "61b104618b2c.js"));
+  // Fetch worker scripts (/b/)
+  const bTarget = path.join(distDir, "b");
+  fs.mkdirSync(bTarget, { recursive: true });
+  await downloadFile(`${upstreamHost}/b/61b104618b2c.js`, path.join(bTarget, "61b104618b2c.js"));
 
-  // 4. Inject runtime Service Worker with local fallbacks
-  console.log("4. Installing Service Worker...");
-  const swCode = `
-  const REPO_PREFIX = "${repoPrefix}";
+  // Fetch and patch Lyra's actual Service Worker (controller.sw.js)
+  console.log("3. Fetching and patching controller.sw.js...");
+  const swDest = path.join(distDir, "controller.sw.js");
+  await downloadFile(`${upstreamHost}/controller.sw.js`, swDest);
 
-  self.addEventListener("install", (e) => self.skipWaiting());
-  self.addEventListener("activate", (e) => e.waitUntil(clients.claim()));
+  if (fs.existsSync(swDest)) {
+    let swContent = fs.readFileSync(swDest, "utf8");
+    // Intercept API endpoints inside the worker
+    const swShim = `
+      // Lyra Static Shim
+      const UPSTREAM = "${upstreamHost}";
+      const REPO = "${repoPrefix}";
 
-  self.addEventListener("fetch", (event) => {
-    const url = new URL(event.request.url);
+      const origFetch = self.fetch;
+      self.fetch = async function(...args) {
+        let url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        if (url.includes("/api/presence") || url.includes("/api/stuff")) {
+          return new Response(JSON.stringify({ ok: true, data: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        if (url.includes("/!cover!/")) {
+          return new Response(
+            Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,10,73,68,65,84,120,156,99,0,1,0,0,5,0,1,13,10,45,180,0,0,0,0,73,69,78,68,174,66,96,130]),
+            { status: 200, headers: { "Content-Type": "image/png" } }
+          );
+        }
+        return origFetch.apply(this, args);
+      };
+    `;
+    swContent = swShim + "\n" + swContent;
+    fs.writeFileSync(swDest, swContent, "utf8");
+  }
 
-    // Mock API
-    if (url.pathname.includes("/api/presence") || url.pathname.includes("/api/stuff")) {
-      return event.respondWith(
-        new Response(JSON.stringify({ ok: true, data: [] }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" }
-        })
-      );
-    }
-
-    // Rewrite domain-level asset paths (/assets/..., /b/...) to local repo paths
-    if (url.origin === self.location.origin && !url.pathname.startsWith(REPO_PREFIX)) {
-      if (url.pathname.startsWith("/assets/") || url.pathname.startsWith("/b/")) {
-        const localPath = self.location.origin + REPO_PREFIX + url.pathname.slice(1) + url.search;
-        return event.respondWith(fetch(localPath));
-      }
-    }
-
-    // Intercept cover art and return a 1x1 transparent PNG fallback if not found
-    if (url.pathname.includes("/!cover!/")) {
-      return event.respondWith(
-        fetch(event.request).then(res => {
-          if (res.status === 404) {
-            return new Response(
-              Uint8Array.from([137,80,78,71,13,10,26,10,0,0,0,13,73,72,68,82,0,0,0,1,0,0,0,1,8,6,0,0,0,31,21,196,137,0,0,0,10,73,68,65,84,120,156,99,0,1,0,0,5,0,1,13,10,45,180,0,0,0,0,73,69,78,68,174,66,96,130]),
-              { status: 200, headers: { "Content-Type": "image/png" } }
-            );
-          }
-          return res;
-        }).catch(() => new Response("", { status: 200 }))
-      );
-    }
-  });`;
-
-  fs.writeFileSync(path.join(distDir, "sw-router.js"), swCode, "utf8");
-
+  // 4. Inject base tag and configuration seed into app.html
   let appHtml = fs.readFileSync(appShellHtml, "utf8");
   const headShim = `
   <base href="${repoPrefix}">
   <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("${repoPrefix}sw-router.js", { scope: "${repoPrefix}" })
-        .catch(() => {});
-    }
-    try {
-      localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
-      localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
-    } catch(e) {}
+    (function() {
+      try {
+        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
+      } catch(e) {}
+    })();
   </script>`;
-
   appHtml = appHtml.replace(/<head([^>]*)>/i, `<head$1>\n${headShim}`);
   fs.writeFileSync(appShellHtml, appHtml, "utf8");
 
-  // 5. Patch file paths
-  scanAndPatch(distDir);
+  // 5. Sweep and update all static file links
+  console.log("4. Patching paths across dist...");
+  patchCode(distDir);
 
-  // 6. Generate 5,000 subdirectory endpoints
+  // 6. Generate 5,000 subfolders
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -301,7 +240,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 7. Master Directory Dashboard
+  // 7. Directory index dashboard
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -353,7 +292,7 @@ async function runBuild() {
 
   fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
 
-  // 8. 404 handler
+  // 8. Fallback 404 handler
   const fallbackHtml = `<!DOCTYPE html>
 <html>
 <head>
