@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
 const { execSync } = require("child_process");
 
 const distDir = path.join(process.cwd(), "dist");
@@ -15,17 +16,43 @@ const repoName = process.env.GITHUB_REPOSITORY
 const repoPrefix = `/${repoName}/`;
 const upstreamHost = "https://lytothera.govt.hu";
 
-function patchCode(dir) {
+function downloadFile(url, dest) {
+  return new Promise((resolve) => {
+    const file = fs.createWriteStream(dest);
+    https.get(url, { headers: { "User-Agent": "Mozilla/5.0" } }, (res) => {
+      if (res.statusCode === 200) {
+        res.pipe(file);
+        file.on("finish", () => {
+          file.close();
+          resolve(true);
+        });
+      } else {
+        file.close();
+        fs.rmSync(dest, { force: true });
+        resolve(false);
+      }
+    }).on("error", () => {
+      file.close();
+      fs.rmSync(dest, { force: true });
+      resolve(false);
+    });
+  });
+}
+
+function scanAndPatch(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      patchCode(full);
+      scanAndPatch(full);
     } else if (/\.(html|js|mjs|css)$/i.test(entry.name)) {
       let code = fs.readFileSync(full, "utf8");
       
-      // Fix root-relative asset prefixes in compiled bundles
-      code = code.replace(/(['"])\/(assets|b|api|!cover!)\//g, `$1${repoPrefix}$2/`);
+      // Patch absolute paths in compiled code
+      code = code.replace(/(['"`])\/(assets|b|api|!cover!)\//g, `$1${repoPrefix}$2/`);
+      
+      // Overwrite dead wisp server if hardcoded
+      code = code.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, "wss://wisp.mercurywork.shop/");
       
       fs.writeFileSync(full, code, "utf8");
     }
@@ -33,7 +60,7 @@ function patchCode(dir) {
 }
 
 async function runBuild() {
-  console.log("Mirroring upstream source...");
+  console.log("1. Mirroring base production assets from upstream...");
   try {
     execSync(
       `wget --mirror --no-parent --convert-links --adjust-extension --page-requisites ` +
@@ -42,19 +69,19 @@ async function runBuild() {
       { stdio: "inherit" }
     );
   } catch (e) {
-    console.log("Initial download complete.");
+    console.log("Initial download completed.");
   }
 
-  // Ensure root index.html is moved to app.html
+  // Ensure index.html exists
   const origHtml = path.join(distDir, "index.html");
   const appShellHtml = path.join(distDir, "app.html");
 
   if (!fs.existsSync(origHtml)) {
-    const candidates = fs.readdirSync(distDir);
-    for (const c of candidates) {
-      const p = path.join(distDir, c, "index.html");
+    const files = fs.readdirSync(distDir);
+    for (const f of files) {
+      const p = path.join(distDir, f, "index.html");
       if (fs.existsSync(p)) {
-        fs.cpSync(path.join(distDir, c), distDir, { recursive: true });
+        fs.cpSync(path.join(distDir, f), distDir, { recursive: true });
         break;
       }
     }
@@ -63,70 +90,124 @@ async function runBuild() {
   if (fs.existsSync(origHtml)) {
     fs.renameSync(origHtml, appShellHtml);
   } else {
-    console.error("Fatal: Failed to download base index.html");
+    console.error("Fatal: Failed to mirror index.html");
     process.exit(1);
   }
 
-  // Inject upstream asset fallback and mock API interceptor into app.html
-  let appHtml = fs.readFileSync(appShellHtml, "utf8");
+  // 2. Discover all chunk filenames referenced inside HTML, JS, and CSS files
+  console.log("2. Scanning bundles for dynamic chunks...");
+  const downloadedUrls = new Set();
+  const chunkRegex = /(?:assets|b)\/[a-zA-Z0-9_./-]+\.(?:js|mjs|css|webp|png|svg|wasm)/g;
 
-  const interceptorScript = `
-  <base href="${repoPrefix}">
-  <script>
-    (function() {
-      const REPO_PREFIX = "${repoPrefix}";
-      const UPSTREAM = "${upstreamHost}";
-      
-      // Auto-fallback for fetch
-      const origFetch = window.fetch;
-      window.fetch = async function(...args) {
-        let url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
-        
-        // Mock non-existent API endpoints
-        if (url.includes("/api/presence") || url.includes("/api/stuff")) {
-          return new Response(JSON.stringify({ ok: true, data: [] }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          });
-        }
+  function findChunksInDir(dir) {
+    const list = [];
+    const entries = fs.readdirSync(dir, { withFileTypes: true });
+    for (const e of entries) {
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) {
+        list.push(...findChunksInDir(p));
+      } else if (/\.(html|js|mjs|css)$/i.test(e.name)) {
+        const text = fs.readFileSync(p, "utf8");
+        const matches = text.match(chunkRegex);
+        if (matches) list.push(...matches);
+      }
+    }
+    return list;
+  }
 
-        // Redirect 404 asset chunks and images to upstream origin
-        if (url.startsWith(window.location.origin) && !url.includes(REPO_PREFIX)) {
-          const relativePath = url.replace(window.location.origin, "");
-          if (relativePath.startsWith("/assets/") || relativePath.startsWith("/b/") || relativePath.startsWith("/!cover!/")) {
-            url = UPSTREAM + relativePath;
-            if (typeof args[0] === "string") args[0] = url;
-            else args[0].url = url;
-          }
-        }
-        
-        try {
-          const res = await origFetch.apply(this, args);
-          if (res.status === 404 && (url.includes("/assets/") || url.includes("/b/") || url.includes("/!cover!/"))) {
-            const upUrl = UPSTREAM + url.substring(url.indexOf("/assets/"));
-            return origFetch(upUrl);
+  const initialChunks = findChunksInDir(distDir);
+  console.log(`Discovered ${initialChunks.length} asset references. Fetching missing chunks...`);
+
+  for (const relPath of initialChunks) {
+    const cleanRel = relPath.replace(/^\/+/, "");
+    const localDest = path.join(distDir, cleanRel);
+    if (!fs.existsSync(localDest) && !downloadedUrls.has(cleanRel)) {
+      downloadedUrls.add(cleanRel);
+      fs.mkdirSync(path.dirname(localDest), { recursive: true });
+      await downloadFile(`${upstreamHost}/${cleanRel}`, localDest);
+    }
+  }
+
+  // 3. Inject global SW router to intercept every request (HTML, JS import, CSS, image)
+  console.log("3. Writing Service Worker router...");
+  const swCode = `
+  const UPSTREAM = "${upstreamHost}";
+  const REPO_PREFIX = "${repoPrefix}";
+
+  self.addEventListener("install", (e) => self.skipWaiting());
+  self.addEventListener("activate", (e) => e.waitUntil(clients.claim()));
+
+  self.addEventListener("fetch", (event) => {
+    const url = new URL(event.request.url);
+
+    // Mock API responses
+    if (url.pathname.includes("/api/presence") || url.pathname.includes("/api/stuff")) {
+      return event.respondWith(
+        new Response(JSON.stringify({ ok: true, data: [] }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" }
+        })
+      );
+    }
+
+    // Intercept domain-root asset lookups (/assets/..., /b/..., /!cover!/...)
+    if (url.origin === self.location.origin && !url.pathname.startsWith(REPO_PREFIX)) {
+      if (
+        url.pathname.startsWith("/assets/") ||
+        url.pathname.startsWith("/b/") ||
+        url.pathname.startsWith("/!cover!/")
+      ) {
+        const redirectUrl = self.location.origin + REPO_PREFIX + url.pathname.slice(1) + url.search;
+        return event.respondWith(
+          fetch(redirectUrl).then((res) => {
+            if (res.status === 404) {
+              return fetch(UPSTREAM + url.pathname + url.search, { mode: "cors" });
+            }
+            return res;
+          }).catch(() => fetch(UPSTREAM + url.pathname + url.search))
+        );
+      }
+    }
+
+    // Fallback missing 404 assets to upstream
+    if (url.pathname.startsWith(REPO_PREFIX + "assets/") || url.pathname.startsWith(REPO_PREFIX + "!cover!/")) {
+      return event.respondWith(
+        fetch(event.request).then((res) => {
+          if (res.status === 404) {
+            const rawSubPath = url.pathname.replace(REPO_PREFIX, "/");
+            return fetch(UPSTREAM + rawSubPath + url.search);
           }
           return res;
-        } catch (e) {
-          return origFetch.apply(this, args);
-        }
-      };
+        })
+      );
+    }
+  });`;
 
-      // Set Wisp default
-      try {
-        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
-        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
-      } catch(e) {}
-    })();
+  fs.writeFileSync(path.join(distDir, "sw-router.js"), swCode, "utf8");
+
+  // Inject Base tag and SW registration into app.html
+  let appHtml = fs.readFileSync(appShellHtml, "utf8");
+  const headShim = `
+  <base href="${repoPrefix}">
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("${repoPrefix}sw-router.js", { scope: "${repoPrefix}" })
+        .then(() => console.log("Router SW active"))
+        .catch(() => {});
+    }
+    try {
+      localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+      localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
+    } catch(e) {}
   </script>`;
 
-  appHtml = appHtml.replace(/<head([^>]*)>/i, `<head$1>\n${interceptorScript}`);
+  appHtml = appHtml.replace(/<head([^>]*)>/i, `<head$1>\n${headShim}`);
   fs.writeFileSync(appShellHtml, appHtml, "utf8");
 
-  // Patch references inside existing static files
-  patchCode(distDir);
+  // 4. Patch static references across all files
+  scanAndPatch(distDir);
 
-  // Subfolder template
+  // 5. Build Subdirectory wrappers
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -143,7 +224,6 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 5,000 unique paths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -175,7 +255,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // Root Directory Index Dashboard
+  // 6. Master Index
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -226,7 +306,21 @@ async function runBuild() {
 </html>`;
 
   fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
-  console.log("Build and interceptors deployed successfully.");
+
+  // 7. SPA 404 Redirect
+  const fallbackHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script>
+    window.location.replace("${repoPrefix}");
+  </script>
+</head>
+<body></body>
+</html>`;
+  fs.writeFileSync(path.join(distDir, "404.html"), fallbackHtml);
+
+  console.log("Build complete.");
 }
 
 runBuild();
