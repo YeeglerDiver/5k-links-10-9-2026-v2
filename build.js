@@ -1,6 +1,5 @@
 const fs = require("fs");
 const path = require("path");
-const https = require("https");
 const { execSync } = require("child_process");
 
 const distDir = path.join(process.cwd(), "dist");
@@ -15,47 +14,27 @@ const repoName = process.env.GITHUB_REPOSITORY
   : "lyra-5k-deploy";
 const repoPrefix = `/${repoName}/`;
 
-function downloadBuffer(url) {
-  return new Promise((resolve, reject) => {
-    https.get(url, { headers: { "User-Agent": "Node-Build-Script" } }, (res) => {
-      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-        return downloadBuffer(res.headers.location).then(resolve).catch(reject);
-      }
-      if (res.statusCode !== 200) {
-        return reject(new Error(`Failed to fetch ${url}, status: ${res.statusCode}`));
-      }
-      const chunks = [];
-      res.on("data", (chunk) => chunks.push(chunk));
-      res.on("end", () => resolve(Buffer.concat(chunks)));
-    }).on("error", reject);
-  });
-}
-
 async function runBuild() {
-  console.log("Extracting gayq/lyra source package...");
+  console.log("Cloning gayq/lyra source package...");
 
-  const repoTarUrl = "https://codeload.github.com/gayq/lyra/tar.gz/refs/heads/main";
-  const tarPath = path.join(process.cwd(), "temp_lyra.tar.gz");
   const extractDir = path.join(process.cwd(), "temp_extracted");
+  if (fs.existsSync(extractDir)) {
+    fs.rmSync(extractDir, { recursive: true, force: true });
+  }
 
   try {
-    const tarBuffer = await downloadBuffer(repoTarUrl);
-    fs.writeFileSync(tarPath, tarBuffer);
-
-    if (fs.existsSync(extractDir)) {
-      fs.rmSync(extractDir, { recursive: true, force: true });
-    }
-    fs.mkdirSync(extractDir, { recursive: true });
-
-    execSync(`tar -xzf "${tarPath}" -C "${extractDir}" --strip-components=1`);
+    execSync(`git clone --depth 1 https://github.com/gayq/lyra.git "${extractDir}"`, {
+      stdio: "inherit"
+    });
   } catch (err) {
-    console.error("Download failed:", err.message);
+    console.error("Git clone failed:", err.message);
     process.exit(1);
   }
 
-  // 1. Copy all upstream repo files into dist root
+  // 1. Copy all repository files to dist root (excluding git metadata)
   const items = fs.readdirSync(extractDir);
   for (const item of items) {
+    if (item === ".git" || item === ".github") continue;
     const src = path.join(extractDir, item);
     const dest = path.join(distDir, item);
     if (fs.statSync(src).isDirectory()) {
@@ -65,10 +44,9 @@ async function runBuild() {
     }
   }
 
-  fs.rmSync(tarPath, { force: true });
   fs.rmSync(extractDir, { recursive: true, force: true });
 
-  // 2. Rename root index.html to app.html so the iframe shell loads it directly
+  // 2. Rename root index.html to app.html so it serves as the full app target
   const origHtml = path.join(distDir, "index.html");
   const appShellHtml = path.join(distDir, "app.html");
   if (fs.existsSync(origHtml)) {
@@ -93,7 +71,7 @@ async function runBuild() {
     fs.writeFileSync(appShellHtml, htmlCode, "utf8");
   }
 
-  // 4. Subfolder wrapper template (iframe points back to root app.html)
+  // 4. Subfolder wrapper template pointing back to the root app.html
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
