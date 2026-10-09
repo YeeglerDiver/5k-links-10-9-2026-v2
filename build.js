@@ -42,7 +42,7 @@ function patchAllScripts(dir) {
 }
 patchAllScripts(distDir);
 
-// 3. Generate app.html with proper Scramjet codec & explicit SharedWorker URL
+// 3. Generate app.html with database auto-repair and connection gating
 const lyraAppHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -60,7 +60,7 @@ const lyraAppHtml = `<!DOCTYPE html>
     }
     header { display: flex; justify-content: space-between; align-items: center; padding: 16px 24px; }
     .badge { background: #1f1f23; padding: 4px 10px; border-radius: 9999px; font-size: 13px; font-weight: 700; }
-    .btn-sync { background: #18181b; border: 1px solid #27272a; color: #a1a1aa; padding: 6px 14px; border-radius: 9999px; font-size: 13px; cursor: pointer; }
+    .btn-sync { background: #18181b; border: 1px solid #27272a; color: #a1a1aa; padding: 6px 14px; border-radius: 9999px; font-size: 13px; }
     main { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 20px; max-width: 680px; margin: 0 auto; width: 100%; }
     .avatar-box { width: 80px; height: 80px; border-radius: 16px; background: #18181b; border: 1px solid #27272a; display: flex; align-items: center; justify-content: center; margin-bottom: 28px; }
     .avatar-box svg { width: 38px; height: 38px; fill: #71717a; }
@@ -135,38 +135,48 @@ const lyraAppHtml = `<!DOCTYPE html>
     const syncStatus = document.getElementById("sync-status");
     let isReady = false;
 
-    // Built-in Scramjet codec fallback (XOR with key 2)
-    const scramjetCodec = {
+    // XOR Codec for Scramjet
+    const scramCodec = {
       encode(str) {
         if (!str) return str;
         return encodeURIComponent(
           str.split('').map((char, ind) => ind % 2 ? String.fromCharCode(char.charCodeAt(0) ^ 2) : char).join('')
         );
-      },
-      decode(str) {
-        if (!str) return str;
-        const [input, ...search] = str.split('?');
-        return (
-          decodeURIComponent(input)
-            .split('')
-            .map((char, ind) => ind % 2 ? String.fromCharCode(char.charCodeAt(0) ^ 2) : char)
-            .join('') + (search.length ? '?' + search.join('?') : '')
-        );
       }
     };
 
+    function resetCorruptedIDB(name) {
+      return new Promise((resolve) => {
+        const req = indexedDB.deleteDatabase(name);
+        req.onsuccess = () => resolve();
+        req.onerror = () => resolve();
+        req.onblocked = () => resolve();
+      });
+    }
+
     async function initClient() {
       try {
-        if ("serviceWorker" in navigator) {
-          await navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" });
+        // Clear stale databases from previous broken runs
+        if (!localStorage.getItem("idb_repaired_v2")) {
+          await resetCorruptedIDB("bare-mux");
+          await resetCorruptedIDB("scramjet");
+          localStorage.setItem("idb_repaired_v2", "true");
         }
 
-        const workerUrl = new URL("${repoPrefix}baremux/worker.js", window.location.href).toString();
-        const connection = new BareMux.BareMuxConnection(workerUrl);
-        const wispUrl = (location.protocol === "https:" ? "wss://" : "ws://") + "wisp.mercurywork.shop/";
-        const epoxyUrl = new URL("${repoPrefix}epoxy/index.mjs", window.location.href).toString();
+        if ("serviceWorker" in navigator) {
+          const reg = await navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" });
+          await navigator.serviceWorker.ready;
+        }
 
-        await connection.setTransport(epoxyUrl, [{ wisp: wispUrl }]);
+        if (window.BareMux) {
+          const workerUrl = new URL("${repoPrefix}baremux/worker.js", window.location.href).toString();
+          const connection = new BareMux.BareMuxConnection(workerUrl);
+          const wispUrl = (location.protocol === "https:" ? "wss://" : "ws://") + "wisp.mercurywork.shop/";
+          const epoxyUrl = new URL("${repoPrefix}epoxy/index.mjs", window.location.href).toString();
+
+          await connection.setTransport(epoxyUrl, [{ wisp: wispUrl }]);
+        }
+
         isReady = true;
         syncStatus.textContent = "cloud sync";
       } catch (err) {
@@ -188,14 +198,7 @@ const lyraAppHtml = `<!DOCTYPE html>
         }
       }
 
-      // Use native scramjet codec if exposed, otherwise use the XOR encoder
-      let encoded;
-      if (window.__scramjet$config && window.__scramjet$config.codec) {
-        encoded = window.__scramjet$config.codec.encode(target);
-      } else {
-        encoded = scramjetCodec.encode(target);
-      }
-
+      const encoded = scramCodec.encode(target);
       viewport.src = "${fullScramPrefix}" + encoded;
       viewport.style.display = "block";
     }
