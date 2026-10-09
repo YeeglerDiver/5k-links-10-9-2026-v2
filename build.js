@@ -38,53 +38,27 @@ function fetchFile(url, dest) {
 }
 
 async function runBuild() {
-  // 1. Fetch working client core
   console.log("1. Pulling static client runtime...");
   const tarPath = path.join(process.cwd(), "temp_core.tar.gz");
   execSync(`curl -sL "https://codeload.github.com/scientific-studying/svg/tar.gz/refs/heads/main" -o "${tarPath}"`);
   execSync(`tar -xzf "${tarPath}" -C "${distDir}" --strip-components=1`);
   fs.rmSync(tarPath, { force: true });
 
-  // 2. Ensure BareMux client assets exist locally
-  console.log("2. Verifying BareMux assets...");
+  console.log("2. Downloading BareMux assets...");
   const baremuxDir = path.join(distDir, "baremux");
   fs.mkdirSync(baremuxDir, { recursive: true });
+  await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/index.js", path.join(baremuxDir, "index.js"));
+  await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/worker.js", path.join(baremuxDir, "worker.js"));
 
-  const baremuxIndex = path.join(baremuxDir, "index.js");
-  if (!fs.existsSync(baremuxIndex)) {
-    console.log("Fetching baremux/index.js from CDN...");
-    await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/index.js", baremuxIndex);
-  }
-
-  const baremuxWorker = path.join(baremuxDir, "worker.js");
-  if (!fs.existsSync(baremuxWorker)) {
-    console.log("Fetching baremux/worker.js from CDN...");
-    await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/worker.js", baremuxWorker);
-  }
-
-  // 3. Ensure Epoxy transport assets exist locally
-  console.log("3. Verifying Epoxy transport assets...");
+  console.log("3. Downloading Epoxy transport assets...");
   const epoxyDir = path.join(distDir, "epoxy");
   fs.mkdirSync(epoxyDir, { recursive: true });
-
-  const epoxyFiles = [
-    "index.mjs",
-    "index.js",
-    "epoxy-transport.wasm",
-    "epoxy-transport.js"
-  ];
-
-  for (const f of epoxyFiles) {
-    const dest = path.join(epoxyDir, f);
-    if (!fs.existsSync(dest)) {
-      console.log(`Fetching epoxy/${f} from CDN...`);
-      await fetchFile(`https://unpkg.com/@mercuryworkshop/epoxy-transport@3.0.1/dist/${f}`, dest);
-    }
+  for (const f of ["index.mjs", "index.js", "epoxy-transport.wasm", "epoxy-transport.js"]) {
+    await fetchFile(`https://unpkg.com/@mercuryworkshop/epoxy-transport@3.0.1/dist/${f}`, path.join(epoxyDir, f));
   }
 
-  // 4. Patch Scramjet prefix & BareMux worker path across runtime
+  // 4. Patch Scramjet prefix across scripts
   const prefixRegex = /(['"`])\/scram\//g;
-
   function patchAllScripts(dir) {
     for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
       const full = path.join(dir, ent.name);
@@ -102,7 +76,35 @@ async function runBuild() {
   }
   patchAllScripts(distDir);
 
-  // 5. Generate app.html
+  // 5. Bypass sw.js IndexedDB lookup failure by prepending in-memory fallback config
+  const swPath = path.join(distDir, "sw.js");
+  if (fs.existsSync(swPath)) {
+    let swCode = fs.readFileSync(swPath, "utf8");
+    const swHeader = `
+      self.__scramjet$config = self.__scramjet$config || {
+        prefix: "${fullScramPrefix}",
+        codec: {
+          encode(str) {
+            if (!str) return str;
+            return encodeURIComponent(
+              str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
+            );
+          },
+          decode(str) {
+            if (!str) return str;
+            const [input, ...search] = str.split('?');
+            return decodeURIComponent(input)
+              .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
+              (search.length ? '?' + search.join('?') : '');
+          }
+        }
+      };
+    `;
+    swCode = swHeader + "\n" + swCode;
+    fs.writeFileSync(swPath, swCode);
+  }
+
+  // 6. Generate app.html
   const lyraAppHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -195,12 +197,22 @@ async function runBuild() {
     const syncStatus = document.getElementById("sync-status");
     let isReady = false;
 
-    const scramCodec = {
-      encode(str) {
-        if (!str) return str;
-        return encodeURIComponent(
-          str.split('').map((char, ind) => ind % 2 ? String.fromCharCode(char.charCodeAt(0) ^ 2) : char).join('')
-        );
+    window.__scramjet$config = {
+      prefix: "${fullScramPrefix}",
+      codec: {
+        encode(str) {
+          if (!str) return str;
+          return encodeURIComponent(
+            str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
+          );
+        },
+        decode(str) {
+          if (!str) return str;
+          const [input, ...search] = str.split('?');
+          return decodeURIComponent(input)
+            .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
+            (search.length ? '?' + search.join('?') : '');
+        }
       }
     };
 
@@ -241,13 +253,7 @@ async function runBuild() {
         }
       }
 
-      let encoded;
-      if (window.__scramjet$config && window.__scramjet$config.codec) {
-        encoded = window.__scramjet$config.codec.encode(target);
-      } else {
-        encoded = scramCodec.encode(target);
-      }
-
+      const encoded = window.__scramjet$config.codec.encode(target);
       viewport.src = "${fullScramPrefix}" + encoded;
       viewport.style.display = "block";
     }
@@ -268,7 +274,7 @@ async function runBuild() {
 
   fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
 
-  // 6. Subfolder wrapper template
+  // 7. Subfolder wrapper template
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -285,7 +291,7 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 7. Generate 5,000 subpaths
+  // 8. Generate 5,000 unique paths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -309,7 +315,6 @@ async function runBuild() {
   }
 
   let masterLinksHtml = "";
-
   for (const nestedPath of uniquePaths) {
     const folderPath = path.join(distDir, nestedPath);
     fs.mkdirSync(folderPath, { recursive: true });
@@ -317,7 +322,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 8. Directory index dashboard
+  // 9. Root Directory Index
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
