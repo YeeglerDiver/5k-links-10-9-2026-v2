@@ -13,34 +13,48 @@ const repoName = process.env.GITHUB_REPOSITORY
   ? process.env.GITHUB_REPOSITORY.split("/")[1]
   : "5k-links-10-9-2026-v2";
 const repoPrefix = `/${repoName}/`;
+const upstreamHost = "https://lytothera.govt.hu";
+
+function patchCode(dir) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  for (const entry of entries) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      patchCode(full);
+    } else if (/\.(html|js|mjs|css)$/i.test(entry.name)) {
+      let code = fs.readFileSync(full, "utf8");
+      
+      // Fix root-relative asset prefixes in compiled bundles
+      code = code.replace(/(['"])\/(assets|b|api|!cover!)\//g, `$1${repoPrefix}$2/`);
+      
+      fs.writeFileSync(full, code, "utf8");
+    }
+  }
+}
 
 async function runBuild() {
-  console.log("Fetching precompiled production assets from lytothera.govt.hu...");
-
-  // Mirror the deployed production site directly into dist
+  console.log("Mirroring upstream source...");
   try {
     execSync(
-      `wget --mirror --convert-links --adjust-extension --page-requisites --no-parent ` +
+      `wget --mirror --no-parent --convert-links --adjust-extension --page-requisites ` +
       `--no-host-directories --directory-prefix="${distDir}" ` +
-      `https://lytothera.govt.hu/`,
+      `${upstreamHost}/`,
       { stdio: "inherit" }
     );
   } catch (e) {
-    // wget exits with code 8 on certain 404 assets (like favicons), which is normal
-    console.log("Completed mirror sync.");
+    console.log("Initial download complete.");
   }
 
-  // 1. Rename root index.html to app.html so subfolder iframes can embed it
+  // Ensure root index.html is moved to app.html
   const origHtml = path.join(distDir, "index.html");
   const appShellHtml = path.join(distDir, "app.html");
 
   if (!fs.existsSync(origHtml)) {
-    // Check if wget placed it under a subfolder
-    const files = fs.readdirSync(distDir);
-    for (const f of files) {
-      const p = path.join(distDir, f, "index.html");
+    const candidates = fs.readdirSync(distDir);
+    for (const c of candidates) {
+      const p = path.join(distDir, c, "index.html");
       if (fs.existsSync(p)) {
-        fs.cpSync(path.join(distDir, f), distDir, { recursive: true });
+        fs.cpSync(path.join(distDir, c), distDir, { recursive: true });
         break;
       }
     }
@@ -49,28 +63,70 @@ async function runBuild() {
   if (fs.existsSync(origHtml)) {
     fs.renameSync(origHtml, appShellHtml);
   } else {
-    console.error("Fatal error: Could not fetch index.html from source.");
+    console.error("Fatal: Failed to download base index.html");
     process.exit(1);
   }
 
-  // 2. Inject <base> tag and fallback Wisp endpoint into app.html
-  let appHtmlContent = fs.readFileSync(appShellHtml, "utf8");
-  const runtimePatch = `
+  // Inject upstream asset fallback and mock API interceptor into app.html
+  let appHtml = fs.readFileSync(appShellHtml, "utf8");
+
+  const interceptorScript = `
   <base href="${repoPrefix}">
   <script>
     (function() {
-      const WISP_ENDPOINT = "wss://wisp.mercurywork.shop/";
+      const REPO_PREFIX = "${repoPrefix}";
+      const UPSTREAM = "${upstreamHost}";
+      
+      // Auto-fallback for fetch
+      const origFetch = window.fetch;
+      window.fetch = async function(...args) {
+        let url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        
+        // Mock non-existent API endpoints
+        if (url.includes("/api/presence") || url.includes("/api/stuff")) {
+          return new Response(JSON.stringify({ ok: true, data: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Redirect 404 asset chunks and images to upstream origin
+        if (url.startsWith(window.location.origin) && !url.includes(REPO_PREFIX)) {
+          const relativePath = url.replace(window.location.origin, "");
+          if (relativePath.startsWith("/assets/") || relativePath.startsWith("/b/") || relativePath.startsWith("/!cover!/")) {
+            url = UPSTREAM + relativePath;
+            if (typeof args[0] === "string") args[0] = url;
+            else args[0].url = url;
+          }
+        }
+        
+        try {
+          const res = await origFetch.apply(this, args);
+          if (res.status === 404 && (url.includes("/assets/") || url.includes("/b/") || url.includes("/!cover!/"))) {
+            const upUrl = UPSTREAM + url.substring(url.indexOf("/assets/"));
+            return origFetch(upUrl);
+          }
+          return res;
+        } catch (e) {
+          return origFetch.apply(this, args);
+        }
+      };
+
+      // Set Wisp default
       try {
-        localStorage.setItem("wisp-server", WISP_ENDPOINT);
-        localStorage.setItem("bare-server", WISP_ENDPOINT);
-        localStorage.setItem("baremux-transport", "epoxy");
+        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
       } catch(e) {}
     })();
   </script>`;
-  appHtmlContent = appHtmlContent.replace(/<head([^>]*)>/i, `<head$1>\n${runtimePatch}`);
-  fs.writeFileSync(appShellHtml, appHtmlContent, "utf8");
 
-  // 3. Subfolder template
+  appHtml = appHtml.replace(/<head([^>]*)>/i, `<head$1>\n${interceptorScript}`);
+  fs.writeFileSync(appShellHtml, appHtml, "utf8");
+
+  // Patch references inside existing static files
+  patchCode(distDir);
+
+  // Subfolder template
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -87,7 +143,7 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 4. Generate 5,000 unique paths
+  // 5,000 unique paths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -119,7 +175,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 5. Main directory index dashboard
+  // Root Directory Index Dashboard
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -170,21 +226,7 @@ async function runBuild() {
 </html>`;
 
   fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
-
-  // 6. SPA fallback
-  const fallbackHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script>
-    window.location.replace("${repoPrefix}");
-  </script>
-</head>
-<body></body>
-</html>`;
-  fs.writeFileSync(path.join(distDir, "404.html"), fallbackHtml);
-
-  console.log("Build complete.");
+  console.log("Build and interceptors deployed successfully.");
 }
 
 runBuild();
