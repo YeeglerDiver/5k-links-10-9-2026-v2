@@ -1,4 +1,4 @@
-name: Deploy Lyra Subpaths
+name: Deploy Client Proxy Subpaths
 
 on:
   push:
@@ -21,11 +21,6 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 22
-
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
 
       - name: Run Build
         run: node build.js
