@@ -14,19 +14,28 @@ const repoName = process.env.GITHUB_REPOSITORY
   : "5k-links-10-9-2026-v2";
 const repoPrefix = `/${repoName}/`;
 
-function findFileRecursive(dir, fileName) {
+function patchAbsolutePaths(dir) {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name === ".git" || entry.name === "node_modules") continue;
     const fullPath = path.join(dir, entry.name);
     if (entry.isDirectory()) {
-      const found = findFileRecursive(fullPath, fileName);
-      if (found) return found;
-    } else if (entry.name.toLowerCase() === fileName.toLowerCase()) {
-      return fullPath;
+      if (entry.name !== "node_modules" && entry.name !== ".git") {
+        patchAbsolutePaths(fullPath);
+      }
+    } else if (/\.(html|js|mjs|json|css)$/i.test(entry.name)) {
+      let text = fs.readFileSync(fullPath, "utf8");
+      
+      // Prevent double prefixing if already patched
+      const safePrefix = repoPrefix.replace(/\/$/, "");
+      
+      // Patch leading slash asset references
+      text = text.replace(/(['"])\/(assets|baremux|scramjet|scram|storage|images|scripts)\//g, `$1${safePrefix}/$2/`);
+      text = text.replace(/href=(['"])\/(?!\/)/g, `href=$1${safePrefix}/`);
+      text = text.replace(/src=(['"])\/(?!\/)/g, `src=$1${safePrefix}/`);
+      
+      fs.writeFileSync(fullPath, text, "utf8");
     }
   }
-  return null;
 }
 
 async function runBuild() {
@@ -46,80 +55,81 @@ async function runBuild() {
     process.exit(1);
   }
 
-  // 1. If package.json exists with a build script, compile the application
+  // 1. Install and compile production bundle with explicit base path
   const pkgPath = path.join(extractDir, "package.json");
   if (fs.existsSync(pkgPath)) {
+    console.log(`Building project with base path: ${repoPrefix}`);
     try {
-      const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
-      if (pkg.scripts && pkg.scripts.build) {
-        console.log("Detected build script. Compiling project with npm...");
-        execSync("npm install", { cwd: extractDir, stdio: "inherit" });
+      execSync("npm install", { cwd: extractDir, stdio: "inherit" });
+      
+      // Run build passing base parameter for Vite/Astro/Webpack
+      try {
+        execSync(`npm run build -- --base=${repoPrefix}`, { cwd: extractDir, stdio: "inherit" });
+      } catch (e) {
+        console.log("npm run build with flags failed, attempting default build...");
         execSync("npm run build", { cwd: extractDir, stdio: "inherit" });
       }
     } catch (e) {
-      console.warn("Build step notice:", e.message);
+      console.warn("Compilation notice:", e.message);
     }
   }
 
-  // 2. Identify the build output folder containing compiled HTML
-  const candidateFolders = ["dist", "build", "out", "public", "static", ""];
+  // 2. Identify the compiled production directory
+  const candidateFolders = ["dist", "build", "out", "public", ""];
   let sourceRoot = null;
 
   for (const folder of candidateFolders) {
     const checkPath = path.join(extractDir, folder);
     if (fs.existsSync(checkPath) && fs.existsSync(path.join(checkPath, "index.html"))) {
+      // Ensure we do not pick uncompiled source root if dist or build exists
+      if (folder === "" && (fs.existsSync(path.join(extractDir, "dist")) || fs.existsSync(path.join(extractDir, "build")))) {
+        continue;
+      }
       sourceRoot = checkPath;
       break;
     }
   }
 
-  // Fallback recursive search if not found in common folders
   if (!sourceRoot) {
-    const foundIndex = findFileRecursive(extractDir, "index.html");
-    if (foundIndex) {
-      sourceRoot = path.dirname(foundIndex);
-    }
-  }
-
-  if (!sourceRoot) {
-    console.error("Fatal error: Could not find index.html in upstream repository.");
+    console.error("Fatal error: Could not find compiled output with index.html.");
     process.exit(1);
   }
 
-  console.log(`Copying source assets from: ${sourceRoot}`);
+  console.log(`Deploying production assets from: ${sourceRoot}`);
   fs.cpSync(sourceRoot, distDir, { recursive: true });
-
-  // Clean up cloned source
   fs.rmSync(extractDir, { recursive: true, force: true });
 
-  // 3. Rename upstream root index.html to app.html so subfolder iframes can load it
+  // 3. Rename root index.html to app.html
   const origHtml = path.join(distDir, "index.html");
   const appShellHtml = path.join(distDir, "app.html");
 
   if (!fs.existsSync(origHtml)) {
-    console.error("Fatal: dist/index.html is missing before rename.");
+    console.error("Fatal: dist/index.html not found.");
     process.exit(1);
   }
-
   fs.renameSync(origHtml, appShellHtml);
 
-  // 4. Inject <base> tag and fallback Wisp servers into app.html
+  // 4. Inject runtime shims for Bare-Mux and Wisp
   let appHtmlContent = fs.readFileSync(appShellHtml, "utf8");
   const runtimePatch = `
   <base href="${repoPrefix}">
   <script>
     (function() {
-      const DEFAULT_WISP = "wss://wisp.mercurywork.shop/";
+      const WISP_ENDPOINT = "wss://wisp.mercurywork.shop/";
       try {
-        if (!localStorage.getItem("wisp-server")) localStorage.setItem("wisp-server", DEFAULT_WISP);
-        if (!localStorage.getItem("bare-server")) localStorage.setItem("bare-server", DEFAULT_WISP);
+        localStorage.setItem("wisp-server", WISP_ENDPOINT);
+        localStorage.setItem("bare-server", WISP_ENDPOINT);
+        localStorage.setItem("baremux-transport", "epoxy");
       } catch(e) {}
     })();
   </script>`;
   appHtmlContent = appHtmlContent.replace(/<head([^>]*)>/i, `<head$1>\n${runtimePatch}`);
   fs.writeFileSync(appShellHtml, appHtmlContent, "utf8");
 
-  // 5. Template for each of the 5,000 subfolders
+  // 5. Sweep and fix absolute paths across all generated assets
+  patchAbsolutePaths(distDir);
+
+  // 6. Subfolder template
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -136,7 +146,7 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 6. Generate 5,000 unique paths
+  // 7. Generate 5,000 unique paths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -168,7 +178,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 7. Directory index dashboard
+  // 8. Directory dashboard
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -219,21 +229,7 @@ async function runBuild() {
 </html>`;
 
   fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
-
-  // 8. Single-Page App 404 Fallback
-  const fallbackHtml = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <script>
-    window.location.replace("${repoPrefix}");
-  </script>
-</head>
-<body></body>
-</html>`;
-  fs.writeFileSync(path.join(distDir, "404.html"), fallbackHtml);
-
-  console.log("Build completed successfully.");
+  console.log("Build complete.");
 }
 
 runBuild();
