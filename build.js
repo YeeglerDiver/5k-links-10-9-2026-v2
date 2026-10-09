@@ -26,9 +26,8 @@ function patchAbsolutePaths(dir) {
       let text = fs.readFileSync(fullPath, "utf8");
       const safePrefix = repoPrefix.replace(/\/$/, "");
 
-      // Patch leading slash asset references
       text = text.replace(
-        /(['"])\/(assets|baremux|scramjet|scram|storage|images|scripts)\//g,
+        /(['"])\/(assets|baremux|scramjet|scram|storage|images|scripts|folio|rivet)\//g,
         `$1${safePrefix}/$2/`
       );
       text = text.replace(/href=(['"])\/(?!\/)/g, `href=$1${safePrefix}/`);
@@ -56,36 +55,29 @@ async function runBuild() {
     process.exit(1);
   }
 
-  // 1. Install and compile with Bun
+  // 1. Install dependencies, then build ONLY the frontend with Vite
   const pkgPath = path.join(extractDir, "package.json");
   if (fs.existsSync(pkgPath)) {
-    console.log(`Building project with base path: ${repoPrefix}`);
+    console.log(`Building frontend with base path: ${repoPrefix}`);
     try {
       execSync("bun install", { cwd: extractDir, stdio: "inherit" });
-      try {
-        execSync(`bun run build --base=${repoPrefix}`, { cwd: extractDir, stdio: "inherit" });
-      } catch (e) {
-        console.log("bun run build with --base failed, retrying standard build...");
-        execSync("bun run build", { cwd: extractDir, stdio: "inherit" });
-      }
+      
+      // Call Vite directly to skip the Rust/Cargo build scripts
+      console.log("Compiling UI bundles with Vite...");
+      execSync(`bun x vite build --base=${repoPrefix}`, { cwd: extractDir, stdio: "inherit" });
     } catch (e) {
-      console.warn("Compilation notice:", e.message);
+      console.error("Vite build failed:", e.message);
+      process.exit(1);
     }
   }
 
   // 2. Identify the compiled production directory
-  const candidateFolders = ["dist", "build", "out", "public", ""];
+  const candidateFolders = ["dist", "build", "out", "public"];
   let sourceRoot = null;
 
   for (const folder of candidateFolders) {
     const checkPath = path.join(extractDir, folder);
     if (fs.existsSync(checkPath) && fs.existsSync(path.join(checkPath, "index.html"))) {
-      if (
-        folder === "" &&
-        (fs.existsSync(path.join(extractDir, "dist")) || fs.existsSync(path.join(extractDir, "build")))
-      ) {
-        continue;
-      }
       sourceRoot = checkPath;
       break;
     }
@@ -110,7 +102,7 @@ async function runBuild() {
   }
   fs.renameSync(origHtml, appShellHtml);
 
-  // 4. Inject runtime shims for Bare-Mux and Wisp
+  // 4. Inject runtime shims for Wisp & Bare-Mux
   let appHtmlContent = fs.readFileSync(appShellHtml, "utf8");
   const runtimePatch = `
   <base href="${repoPrefix}">
