@@ -6,7 +6,6 @@
   <script>
     if ("serviceWorker" in navigator) {
       navigator.serviceWorker.register("/5k-links-10-9-2026-v2/sw-router.js", { scope: "/5k-links-10-9-2026-v2/" })
-        .then(() => console.log("Router SW active"))
         .catch(() => {});
     }
     try {
