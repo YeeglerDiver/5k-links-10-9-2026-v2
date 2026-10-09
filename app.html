@@ -90,7 +90,6 @@
     const syncStatus = document.getElementById("sync-status");
     let isReady = false;
 
-    // XOR Codec for Scramjet
     const scramCodec = {
       encode(str) {
         if (!str) return str;
@@ -100,26 +99,10 @@
       }
     };
 
-    function resetCorruptedIDB(name) {
-      return new Promise((resolve) => {
-        const req = indexedDB.deleteDatabase(name);
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-        req.onblocked = () => resolve();
-      });
-    }
-
     async function initClient() {
       try {
-        // Clear stale databases from previous broken runs
-        if (!localStorage.getItem("idb_repaired_v2")) {
-          await resetCorruptedIDB("bare-mux");
-          await resetCorruptedIDB("scramjet");
-          localStorage.setItem("idb_repaired_v2", "true");
-        }
-
         if ("serviceWorker" in navigator) {
-          const reg = await navigator.serviceWorker.register("/5k-links-10-9-2026-v2/sw.js", { scope: "/5k-links-10-9-2026-v2/scram/" });
+          await navigator.serviceWorker.register("/5k-links-10-9-2026-v2/sw.js", { scope: "/5k-links-10-9-2026-v2/scram/" });
           await navigator.serviceWorker.ready;
         }
 
@@ -153,7 +136,13 @@
         }
       }
 
-      const encoded = scramCodec.encode(target);
+      let encoded;
+      if (window.__scramjet$config && window.__scramjet$config.codec) {
+        encoded = window.__scramjet$config.codec.encode(target);
+      } else {
+        encoded = scramCodec.encode(target);
+      }
+
       viewport.src = "/5k-links-10-9-2026-v2/scram/" + encoded;
       viewport.style.display = "block";
     }
