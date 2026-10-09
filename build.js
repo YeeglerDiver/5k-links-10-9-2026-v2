@@ -14,95 +14,46 @@ const repoName = process.env.GITHUB_REPOSITORY
   : "5k-links-10-9-2026-v2";
 const repoPrefix = `/${repoName}/`;
 
-function patchAbsolutePaths(dir) {
-  const entries = fs.readdirSync(dir, { withFileTypes: true });
-  for (const entry of entries) {
-    const fullPath = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      if (entry.name !== "node_modules" && entry.name !== ".git") {
-        patchAbsolutePaths(fullPath);
-      }
-    } else if (/\.(html|js|mjs|json|css)$/i.test(entry.name)) {
-      let text = fs.readFileSync(fullPath, "utf8");
-      const safePrefix = repoPrefix.replace(/\/$/, "");
-
-      text = text.replace(
-        /(['"])\/(assets|baremux|scramjet|scram|storage|images|scripts|folio|rivet)\//g,
-        `$1${safePrefix}/$2/`
-      );
-      text = text.replace(/href=(['"])\/(?!\/)/g, `href=$1${safePrefix}/`);
-      text = text.replace(/src=(['"])\/(?!\/)/g, `src=$1${safePrefix}/`);
-
-      fs.writeFileSync(fullPath, text, "utf8");
-    }
-  }
-}
-
 async function runBuild() {
-  console.log("Cloning gayq/lyra source package...");
+  console.log("Fetching precompiled production assets from lytothera.govt.hu...");
 
-  const extractDir = path.join(process.cwd(), "temp_extracted");
-  if (fs.existsSync(extractDir)) {
-    fs.rmSync(extractDir, { recursive: true, force: true });
-  }
-
+  // Mirror the deployed production site directly into dist
   try {
-    execSync(`git clone --depth 1 https://github.com/gayq/lyra.git "${extractDir}"`, {
-      stdio: "inherit"
-    });
-  } catch (err) {
-    console.error("Git clone failed:", err.message);
-    process.exit(1);
+    execSync(
+      `wget --mirror --convert-links --adjust-extension --page-requisites --no-parent ` +
+      `--no-host-directories --directory-prefix="${distDir}" ` +
+      `https://lytothera.govt.hu/`,
+      { stdio: "inherit" }
+    );
+  } catch (e) {
+    // wget exits with code 8 on certain 404 assets (like favicons), which is normal
+    console.log("Completed mirror sync.");
   }
 
-  // 1. Install dependencies, then build ONLY the frontend with Vite
-  const pkgPath = path.join(extractDir, "package.json");
-  if (fs.existsSync(pkgPath)) {
-    console.log(`Building frontend with base path: ${repoPrefix}`);
-    try {
-      execSync("bun install", { cwd: extractDir, stdio: "inherit" });
-      
-      // Call Vite directly to skip the Rust/Cargo build scripts
-      console.log("Compiling UI bundles with Vite...");
-      execSync(`bun x vite build --base=${repoPrefix}`, { cwd: extractDir, stdio: "inherit" });
-    } catch (e) {
-      console.error("Vite build failed:", e.message);
-      process.exit(1);
-    }
-  }
-
-  // 2. Identify the compiled production directory
-  const candidateFolders = ["dist", "build", "out", "public"];
-  let sourceRoot = null;
-
-  for (const folder of candidateFolders) {
-    const checkPath = path.join(extractDir, folder);
-    if (fs.existsSync(checkPath) && fs.existsSync(path.join(checkPath, "index.html"))) {
-      sourceRoot = checkPath;
-      break;
-    }
-  }
-
-  if (!sourceRoot) {
-    console.error("Fatal error: Could not find compiled output with index.html.");
-    process.exit(1);
-  }
-
-  console.log(`Deploying production assets from: ${sourceRoot}`);
-  fs.cpSync(sourceRoot, distDir, { recursive: true });
-  fs.rmSync(extractDir, { recursive: true, force: true });
-
-  // 3. Rename root index.html to app.html so subfolder iframes can embed it
+  // 1. Rename root index.html to app.html so subfolder iframes can embed it
   const origHtml = path.join(distDir, "index.html");
   const appShellHtml = path.join(distDir, "app.html");
 
   if (!fs.existsSync(origHtml)) {
-    console.error("Fatal: dist/index.html not found.");
+    // Check if wget placed it under a subfolder
+    const files = fs.readdirSync(distDir);
+    for (const f of files) {
+      const p = path.join(distDir, f, "index.html");
+      if (fs.existsSync(p)) {
+        fs.cpSync(path.join(distDir, f), distDir, { recursive: true });
+        break;
+      }
+    }
+  }
+
+  if (fs.existsSync(origHtml)) {
+    fs.renameSync(origHtml, appShellHtml);
+  } else {
+    console.error("Fatal error: Could not fetch index.html from source.");
     process.exit(1);
   }
-  fs.renameSync(origHtml, appShellHtml);
 
-  // 4. Inject runtime shims for Wisp & Bare-Mux
+  // 2. Inject <base> tag and fallback Wisp endpoint into app.html
   let appHtmlContent = fs.readFileSync(appShellHtml, "utf8");
   const runtimePatch = `
   <base href="${repoPrefix}">
@@ -119,10 +70,7 @@ async function runBuild() {
   appHtmlContent = appHtmlContent.replace(/<head([^>]*)>/i, `<head$1>\n${runtimePatch}`);
   fs.writeFileSync(appShellHtml, appHtmlContent, "utf8");
 
-  // 5. Sweep and fix absolute paths across all generated assets
-  patchAbsolutePaths(distDir);
-
-  // 6. Subfolder template
+  // 3. Subfolder template
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -139,7 +87,7 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 7. Generate 5,000 unique paths
+  // 4. Generate 5,000 unique paths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -171,7 +119,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 8. Main directory index dashboard
+  // 5. Main directory index dashboard
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -222,6 +170,20 @@ async function runBuild() {
 </html>`;
 
   fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
+
+  // 6. SPA fallback
+  const fallbackHtml = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script>
+    window.location.replace("${repoPrefix}");
+  </script>
+</head>
+<body></body>
+</html>`;
+  fs.writeFileSync(path.join(distDir, "404.html"), fallbackHtml);
+
   console.log("Build complete.");
 }
 
