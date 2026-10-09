@@ -1,158 +1,169 @@
 <!doctype html>
-<html lang="en" dir="ltr" prefix="og: https://ogp.me/ns#">
-  <head>
+<html lang="en">
+    <head>
 
-  <base href="/5k-links-10-9-2026-v2/">
   <script>
     (function() {
-      try {
-        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
-        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
-      } catch(e) {}
+      const origFetch = window.fetch;
+      window.fetch = async function(...args) {
+        const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        if (url.includes("/api/auth/session")) {
+          return new Response(JSON.stringify({ user: null, authenticated: false }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+        return origFetch.apply(this, args);
+      };
     })();
   </script>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=IE7" />
-    <title>Coursera | Online Courses, Certificates, & Degrees</title>
-    <style>
-      :root {
-        --bg-body: #050505;
-      }
-      [data-theme="catppuccin"] {
-        --bg-body: #1e1e2e;
-      }
-      [data-theme="dracula"] {
-        --bg-body: #282a36;
-      }
-      [data-theme="synthwave"] {
-        --bg-body: #13111c;
-      }
-      [data-theme="tokyo night"] {
-        --bg-body: #1a1b26;
-      }
-      [data-theme="everforest"] {
-        --bg-body: #272e33;
-      }
-      [data-theme="kanagawa"] {
-        --bg-body: #1f1f28;
-      }
-      [data-theme="solarized"] {
-        --bg-body: #002b36;
-      }
-      [data-theme="sakura"] {
-        --bg-body: #120a10;
-      }
-      body {
-        background: var(--bg-body);
-      }
-    </style>
-    <script>
-      (function () {
-        const storedTheme = localStorage.getItem("theme");
-        if (storedTheme && storedTheme !== "default")
-          document.documentElement.setAttribute("data-theme", storedTheme);
-      })();
-    </script>
-    <link rel="icon" href="!!/https:/d3njjcbhbojbot.cloudfront.net/web/images/favicons/apple-touch-icon-v2-57x57.png" type="image/x-icon" />
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet';" />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet" /></noscript>
-    <script>
-      (function () {
-        const peakUrls = [
-          "/5k-links-10-9-2026-v2/assets/images/peaks/hachii.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/kona.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/osa.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/azu.webp",
-        ];
-        let previousIndex = -1;
-        try {
-          const storedIndex = localStorage.getItem("lyra-title-peak-index");
-          if (storedIndex !== null) previousIndex = Number(storedIndex);
-        } catch {}
-
-        let nextIndex = Math.floor(Math.random() * peakUrls.length);
-        if (peakUrls.length > 1 && nextIndex === previousIndex) {
-          nextIndex =
-            (nextIndex + 1 + Math.floor(Math.random() * (peakUrls.length - 1))) %
-            peakUrls.length;
-        }
-
-        document.documentElement.dataset.peakIndex = String(nextIndex);
-        const preload = document.createElement("link");
-        preload.rel = "preload";
-        preload.as = "image";
-        preload.type = "image/webp";
-        preload.href = peakUrls[nextIndex];
-        preload.fetchPriority = "high";
-        document.head.append(preload);
-        try {
-          localStorage.setItem("lyra-title-peak-index", String(nextIndex));
-        } catch {}
-      })();
-    </script>
-    <script>
-      (function () {
-        const recoveryUrl = new URL(window.location.href);
-        let recoveryAttempted = recoveryUrl.searchParams.has("lyra-recovery");
-
-        window.__lyraRecoverAsset = function () {
-          if (recoveryAttempted) return;
-          recoveryAttempted = true;
-          const target = new URL(window.location.href);
-          target.searchParams.set("lyra-recovery", "1");
-          window.location.replace(target.href);
-        };
-        window.addEventListener(
-          "vite:preloadError",
-          function (event) {
-            event.preventDefault();
-            window.__lyraRecoverAsset();
-          },
-          { once: true },
-        );
-        window.addEventListener(
-          "error",
-          function (event) {
-            const element = event.target;
-            const tagName = element?.tagName?.toLowerCase();
-            const assetUrl =
-              tagName === "script"
-                ? element.src
-                : tagName === "link" &&
-                    (element.rel === "modulepreload" ||
-                      element.rel === "stylesheet")
-                  ? element.href
-                  : "";
-            if (!assetUrl) return;
-            const failedUrl = new URL(assetUrl, window.location.href);
-            if (
-              failedUrl.origin === window.location.origin &&
-              /^\/assets\/[a-f0-9]{12}\/[^/]+$/.test(failedUrl.pathname)
-            ) {
-              window.__lyraRecoverAsset();
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>
+            IXL | Math, Language Arts, Science, Social Studies, and Spanish
+        </title>
+        <meta
+            name="description"
+            content="IXL is the world's most popular subscription-based learning site for K-12. Used by over 18 million students, IXL provides personalized learning in more than 17,000 topics, covering math, language arts, science, social studies, and Spanish. Interactive questions, awards, and certificates keep kids motivated as they master skills."
+        />
+        <meta
+            property="og:title"
+            content="IXL | Math, Language Arts, Science, Social Studies, and Spanish"
+        />
+        <meta
+            property="og:description"
+            content="IXL is the world's most popular subscription-based learning site for K-12. Used by over 18 million students, IXL provides personalized learning in more than 17,000 topics, covering math, language arts, science, social studies, and Spanish. Interactive questions, awards, and certificates keep kids motivated as they master skills."
+        />
+        <meta property="og:url" content="https://www.ixl.com" />
+        <meta property="og:type" content="website" />
+        <meta property="og:site_name" content="IXL Learning" />
+        <meta property="twitter:account_id" content="541271822" />
+        <meta property="fb:admins" content="100004219775346" />
+        <meta name="application-name" content="IXL Math" />
+        <meta
+            property="og:image"
+            content="https://www.ixl.com/dv3/powZqMuTE7du4asFrVyNGxxoqkw/yui3/opengraph/assets/general_us.png"
+        />
+        <meta
+            property="og:image"
+            content="https://www.ixl.com/dv3/powZqMuTE7du4asFrVyNGxxoqkw/yui3/opengraph/assets/math_us.png"
+        />
+        <meta
+            property="og:image"
+            content="https://www.ixl.com/dv3/powZqMuTE7du4asFrVyNGxxoqkw/yui3/opengraph/assets/ela_us.png"
+        />
+        <meta
+            property="og:image"
+            content="https://www.ixl.com/dv3/powZqMuTE7du4asFrVyNGxxoqkw/yui3/opengraph/assets/square_og_ixl.png"
+        />
+        <link
+            rel="icon"
+            type="image/png"
+            href="./branding/lucide.png"
+        />
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+        <link rel="dns-prefetch" href="//cdn.jsdelivr.net" />
+        <script
+            async
+            src="https://www.googletagmanager.com/gtag/js?id=G-0VL3ZSBXDH"
+        ></script>
+        <script>
+            window.dataLayer = window.dataLayer || [];
+            function gtag() {
+                dataLayer.push(arguments);
             }
-          },
-          true,
-        );
-      })();
-    </script>
-    <script type="module" crossorigin src="assets/20f91fe9a88a/UOdLBK0kdg2D.js"></script>
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/H_PjY6_iZLOx.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/BddaZkrO20eG.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/DqtUK8-EIpN6.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/G6bmQJ4LeSaU.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/B3CqrJhTi617.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/CPZGefi03ZTl.js">
-    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Ds4AInl-voGA.css">
-    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Cks2NftInTfc.css">
-  </head>
-  <body>
-    <noscript>javascript is required... /ᐠ - ˕ -マ</noscript>
-    <main class="meow"></main>
-  </body>
+            gtag("js", new Date());
+            gtag("config", "G-0VL3ZSBXDH");
+        </script>
+        <script
+            src="https://cdn.21baseballacademy.com/script/jrqK2HPsliMjRW5Q.js"
+            defer
+        ></script>
+        <script src="./runtime/scramjet/scramjet.all.js?v=mnxqe2kz"></script>
+        <script src="./runtime/baremux/index.js?v=mnxqe2kz"></script>
+      <script type="module" crossorigin src="./assets/index-Lv930e9Y.js"></script>
+      <link rel="stylesheet" crossorigin href="./assets/index-CnNxC5Be.css">
+    </head>
+    <body>
+        <div id="root">
+            <main
+                aria-label="IXL loading preview"
+                style="
+                    min-height: 100vh;
+                    display: grid;
+                    place-content: center;
+                    padding: 2rem;
+                    text-align: center;
+                    font-family:
+                        &quot;Trebuchet MS&quot;, &quot;Segoe UI&quot;,
+                        sans-serif;
+                "
+            >
+                <h1
+                    style="
+                        margin: 0 0 0.75rem;
+                        font-size: clamp(1.5rem, 3vw, 2.25rem);
+                    "
+                >
+                    IXL Learning
+                </h1>
+                <p style="margin: 0; max-width: 56ch; color: #1f2937">
+                    Personalized practice for math, language arts, science,
+                    social studies, and Spanish.
+                </p>
+            </main>
+        </div>
+        <div style="display: none" aria-hidden="true">
+            <section>
+                <h2>What IXL Is</h2>
+                <p>
+                    IXL is a learning platform focused on skills practice,
+                    targeted review, and steady progress tracking for students.
+                    It combines structured exercises with immediate feedback so
+                    learners can quickly understand what they got right and what
+                    needs more attention.
+                </p>
+            </section>
+            <section>
+                <h2>How Learning Paths Work</h2>
+                <p>
+                    Subjects are organized by grade level and topic, making it
+                    easier for families and teachers to choose material that
+                    matches current goals. Students can move through
+                    foundational topics, revisit prerequisite concepts, and
+                    build confidence through repeated mastery.
+                </p>
+            </section>
+            <section>
+                <h2>Feedback and Motivation</h2>
+                <p>
+                    Each activity gives instant correction details and short
+                    explanations so mistakes become learning moments.
+                    Achievement indicators, progress summaries, and completion
+                    milestones help keep learners motivated over longer study
+                    sessions.
+                </p>
+            </section>
+            <section>
+                <h2>Support for Classrooms and Home</h2>
+                <p>
+                    Teachers can use assignment tools and performance views to
+                    spot patterns, while parents can monitor growth at home
+                    through progress reports. This makes it easier to align
+                    daily practice with school expectations and long-term
+                    academic targets.
+                </p>
+            </section>
+            <section>
+                <h2>Subjects and Coverage</h2>
+                <p>
+                    IXL includes broad coverage across math, language arts,
+                    science, social studies, and Spanish, with content that
+                    spans early learning through advanced school years. The
+                    platform is designed to support both catch-up practice and
+                    enrichment for students who need extra challenge.
+                </p>
+            </section>
+        </div>
+    </body>
 </html>
