@@ -4,14 +4,12 @@
 
   <base href="/5k-links-10-9-2026-v2/">
   <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("/5k-links-10-9-2026-v2/sw-router.js", { scope: "/5k-links-10-9-2026-v2/" })
-        .catch(() => {});
-    }
-    try {
-      localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
-      localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
-    } catch(e) {}
+    (function() {
+      try {
+        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
+      } catch(e) {}
+    })();
   </script>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
