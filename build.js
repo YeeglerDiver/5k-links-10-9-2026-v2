@@ -46,7 +46,7 @@ async function runBuild() {
   fs.rmSync(tarPath, { force: true });
 
   // 2. Ensure BareMux client assets exist locally
-  console.log("2. Verifying baremux assets...");
+  console.log("2. Verifying BareMux assets...");
   const baremuxDir = path.join(distDir, "baremux");
   fs.mkdirSync(baremuxDir, { recursive: true });
 
@@ -62,7 +62,27 @@ async function runBuild() {
     await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/worker.js", baremuxWorker);
   }
 
-  // 3. Patch Scramjet prefix & BareMux worker path across runtime
+  // 3. Ensure Epoxy transport assets exist locally
+  console.log("3. Verifying Epoxy transport assets...");
+  const epoxyDir = path.join(distDir, "epoxy");
+  fs.mkdirSync(epoxyDir, { recursive: true });
+
+  const epoxyFiles = [
+    "index.mjs",
+    "index.js",
+    "epoxy-transport.wasm",
+    "epoxy-transport.js"
+  ];
+
+  for (const f of epoxyFiles) {
+    const dest = path.join(epoxyDir, f);
+    if (!fs.existsSync(dest)) {
+      console.log(`Fetching epoxy/${f} from CDN...`);
+      await fetchFile(`https://unpkg.com/@mercuryworkshop/epoxy-transport@3.0.1/dist/${f}`, dest);
+    }
+  }
+
+  // 4. Patch Scramjet prefix & BareMux worker path across runtime
   const prefixRegex = /(['"`])\/scram\//g;
 
   function patchAllScripts(dir) {
@@ -70,10 +90,11 @@ async function runBuild() {
       const full = path.join(dir, ent.name);
       if (ent.isDirectory()) {
         patchAllScripts(full);
-      } else if (/\.(js|json|html)$/i.test(ent.name)) {
+      } else if (/\.(js|mjs|json|html)$/i.test(ent.name)) {
         let code = fs.readFileSync(full, "utf8");
         code = code.replace(prefixRegex, `$1${fullScramPrefix}`);
         code = code.replace(/(['"`])\/baremux\//g, `$1${repoPrefix}baremux/`);
+        code = code.replace(/(['"`])\/epoxy\//g, `$1${repoPrefix}epoxy/`);
         code = code.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, TARGET_WISP);
         fs.writeFileSync(full, code, "utf8");
       }
@@ -81,7 +102,7 @@ async function runBuild() {
   }
   patchAllScripts(distDir);
 
-  // 4. Generate app.html
+  // 5. Generate app.html
   const lyraAppHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -247,7 +268,7 @@ async function runBuild() {
 
   fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
 
-  // 5. Subfolder wrapper template
+  // 6. Subfolder wrapper template
   const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -264,7 +285,7 @@ async function runBuild() {
 </body>
 </html>`;
 
-  // 6. Generate 5,000 subpaths
+  // 7. Generate 5,000 subpaths
   const TOTAL_PAGES = 5000;
   const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
@@ -296,7 +317,7 @@ async function runBuild() {
     masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
   }
 
-  // 7. Directory index dashboard
+  // 8. Directory index dashboard
   const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
