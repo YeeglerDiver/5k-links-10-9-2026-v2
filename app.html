@@ -90,12 +90,22 @@
     const syncStatus = document.getElementById("sync-status");
     let isReady = false;
 
-    const scramCodec = {
-      encode(str) {
-        if (!str) return str;
-        return encodeURIComponent(
-          str.split('').map((char, ind) => ind % 2 ? String.fromCharCode(char.charCodeAt(0) ^ 2) : char).join('')
-        );
+    window.__scramjet$config = {
+      prefix: "/5k-links-10-9-2026-v2/scram/",
+      codec: {
+        encode(str) {
+          if (!str) return str;
+          return encodeURIComponent(
+            str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
+          );
+        },
+        decode(str) {
+          if (!str) return str;
+          const [input, ...search] = str.split('?');
+          return decodeURIComponent(input)
+            .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
+            (search.length ? '?' + search.join('?') : '');
+        }
       }
     };
 
@@ -136,13 +146,7 @@
         }
       }
 
-      let encoded;
-      if (window.__scramjet$config && window.__scramjet$config.codec) {
-        encoded = window.__scramjet$config.codec.encode(target);
-      } else {
-        encoded = scramCodec.encode(target);
-      }
-
+      const encoded = window.__scramjet$config.codec.encode(target);
       viewport.src = "/5k-links-10-9-2026-v2/scram/" + encoded;
       viewport.style.display = "block";
     }

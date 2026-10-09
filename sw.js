@@ -1,3 +1,23 @@
+
+      self.__scramjet$config = self.__scramjet$config || {
+        prefix: "/5k-links-10-9-2026-v2/scram/",
+        codec: {
+          encode(str) {
+            if (!str) return str;
+            return encodeURIComponent(
+              str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
+            );
+          },
+          decode(str) {
+            if (!str) return str;
+            const [input, ...search] = str.split('?');
+            return decodeURIComponent(input)
+              .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
+              (search.length ? '?' + search.join('?') : '');
+          }
+        }
+      };
+    
 importScripts('./runtime/scramjet/scramjet.all.js')
 
 const { ScramjetServiceWorker } = $scramjetLoadWorker()
