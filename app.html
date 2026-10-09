@@ -5,10 +5,11 @@
   <base href="/5k-links-10-9-2026-v2/">
   <script>
     (function() {
-      const DEFAULT_WISP = "wss://wisp.mercurywork.shop/";
+      const WISP_ENDPOINT = "wss://wisp.mercurywork.shop/";
       try {
-        if (!localStorage.getItem("wisp-server")) localStorage.setItem("wisp-server", DEFAULT_WISP);
-        if (!localStorage.getItem("bare-server")) localStorage.setItem("bare-server", DEFAULT_WISP);
+        localStorage.setItem("wisp-server", WISP_ENDPOINT);
+        localStorage.setItem("bare-server", WISP_ENDPOINT);
+        localStorage.setItem("baremux-transport", "epoxy");
       } catch(e) {}
     })();
   </script>
@@ -55,7 +56,7 @@
           document.documentElement.setAttribute("data-theme", storedTheme);
       })();
     </script>
-    <link rel="icon" href="/!!/https://d3njjcbhbojbot.cloudfront.net/web/images/favicons/apple-touch-icon-v2-57x57.png" type="image/x-icon" />
+    <link rel="icon" href="!!/https:/d3njjcbhbojbot.cloudfront.net/web/images/favicons/apple-touch-icon-v2-57x57.png" type="image/x-icon" />
     <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
     <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -142,7 +143,15 @@
         );
       })();
     </script>
-    <script type="module" src="/app/entry.tsx"></script>
+    <script type="module" crossorigin src="assets/20f91fe9a88a/UOdLBK0kdg2D.js"></script>
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/H_PjY6_iZLOx.js">
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/BddaZkrO20eG.js">
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/DqtUK8-EIpN6.js">
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/G6bmQJ4LeSaU.js">
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/B3CqrJhTi617.js">
+    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/CPZGefi03ZTl.js">
+    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Ds4AInl-voGA.css">
+    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Cks2NftInTfc.css">
   </head>
   <body>
     <noscript>javascript is required... /ᐠ - ˕ -マ</noscript>
