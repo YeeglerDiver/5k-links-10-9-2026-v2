@@ -1,5 +1,6 @@
 const fs = require("fs");
 const path = require("path");
+const https = require("https");
 const { execSync } = require("child_process");
 
 const distDir = path.join(process.cwd(), "dist");
@@ -16,34 +17,72 @@ const repoPrefix = `/${repoName}/`;
 const fullScramPrefix = `${repoPrefix}scram/`;
 const TARGET_WISP = "wss://wisp.mercurywork.shop/";
 
-// 1. Fetch working client core
-console.log("1. Pulling static client runtime...");
-const tarPath = path.join(process.cwd(), "temp_core.tar.gz");
-execSync(`curl -sL "https://codeload.github.com/scientific-studying/svg/tar.gz/refs/heads/main" -o "${tarPath}"`);
-execSync(`tar -xzf "${tarPath}" -C "${distDir}" --strip-components=1`);
-fs.rmSync(tarPath, { force: true });
+function fetchFile(url, dest) {
+  return new Promise((resolve) => {
+    https.get(url, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return fetchFile(res.headers.location, dest).then(resolve);
+      }
+      if (res.statusCode === 200) {
+        const file = fs.createWriteStream(dest);
+        res.pipe(file);
+        file.on("finish", () => {
+          file.close();
+          resolve(true);
+        });
+      } else {
+        resolve(false);
+      }
+    }).on("error", () => resolve(false));
+  });
+}
 
-// 2. Patch Scramjet prefix & BareMux worker path across runtime
-const prefixRegex = /(['"`])\/scram\//g;
+async function runBuild() {
+  // 1. Fetch working client core
+  console.log("1. Pulling static client runtime...");
+  const tarPath = path.join(process.cwd(), "temp_core.tar.gz");
+  execSync(`curl -sL "https://codeload.github.com/scientific-studying/svg/tar.gz/refs/heads/main" -o "${tarPath}"`);
+  execSync(`tar -xzf "${tarPath}" -C "${distDir}" --strip-components=1`);
+  fs.rmSync(tarPath, { force: true });
 
-function patchAllScripts(dir) {
-  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
-    const full = path.join(dir, ent.name);
-    if (ent.isDirectory()) {
-      patchAllScripts(full);
-    } else if (/\.(js|json|html)$/i.test(ent.name)) {
-      let code = fs.readFileSync(full, "utf8");
-      code = code.replace(prefixRegex, `$1${fullScramPrefix}`);
-      code = code.replace(/(['"`])\/baremux\//g, `$1${repoPrefix}baremux/`);
-      code = code.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, TARGET_WISP);
-      fs.writeFileSync(full, code, "utf8");
+  // 2. Ensure BareMux client assets exist locally
+  console.log("2. Verifying baremux assets...");
+  const baremuxDir = path.join(distDir, "baremux");
+  fs.mkdirSync(baremuxDir, { recursive: true });
+
+  const baremuxIndex = path.join(baremuxDir, "index.js");
+  if (!fs.existsSync(baremuxIndex)) {
+    console.log("Fetching baremux/index.js from CDN...");
+    await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/index.js", baremuxIndex);
+  }
+
+  const baremuxWorker = path.join(baremuxDir, "worker.js");
+  if (!fs.existsSync(baremuxWorker)) {
+    console.log("Fetching baremux/worker.js from CDN...");
+    await fetchFile("https://unpkg.com/@mercuryworkshop/bare-mux@2.1.9/dist/worker.js", baremuxWorker);
+  }
+
+  // 3. Patch Scramjet prefix & BareMux worker path across runtime
+  const prefixRegex = /(['"`])\/scram\//g;
+
+  function patchAllScripts(dir) {
+    for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, ent.name);
+      if (ent.isDirectory()) {
+        patchAllScripts(full);
+      } else if (/\.(js|json|html)$/i.test(ent.name)) {
+        let code = fs.readFileSync(full, "utf8");
+        code = code.replace(prefixRegex, `$1${fullScramPrefix}`);
+        code = code.replace(/(['"`])\/baremux\//g, `$1${repoPrefix}baremux/`);
+        code = code.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, TARGET_WISP);
+        fs.writeFileSync(full, code, "utf8");
+      }
     }
   }
-}
-patchAllScripts(distDir);
+  patchAllScripts(distDir);
 
-// 3. Generate app.html with database auto-repair and connection gating
-const lyraAppHtml = `<!DOCTYPE html>
+  // 4. Generate app.html
+  const lyraAppHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -135,7 +174,6 @@ const lyraAppHtml = `<!DOCTYPE html>
     const syncStatus = document.getElementById("sync-status");
     let isReady = false;
 
-    // XOR Codec for Scramjet
     const scramCodec = {
       encode(str) {
         if (!str) return str;
@@ -145,26 +183,10 @@ const lyraAppHtml = `<!DOCTYPE html>
       }
     };
 
-    function resetCorruptedIDB(name) {
-      return new Promise((resolve) => {
-        const req = indexedDB.deleteDatabase(name);
-        req.onsuccess = () => resolve();
-        req.onerror = () => resolve();
-        req.onblocked = () => resolve();
-      });
-    }
-
     async function initClient() {
       try {
-        // Clear stale databases from previous broken runs
-        if (!localStorage.getItem("idb_repaired_v2")) {
-          await resetCorruptedIDB("bare-mux");
-          await resetCorruptedIDB("scramjet");
-          localStorage.setItem("idb_repaired_v2", "true");
-        }
-
         if ("serviceWorker" in navigator) {
-          const reg = await navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" });
+          await navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" });
           await navigator.serviceWorker.ready;
         }
 
@@ -198,7 +220,13 @@ const lyraAppHtml = `<!DOCTYPE html>
         }
       }
 
-      const encoded = scramCodec.encode(target);
+      let encoded;
+      if (window.__scramjet$config && window.__scramjet$config.codec) {
+        encoded = window.__scramjet$config.codec.encode(target);
+      } else {
+        encoded = scramCodec.encode(target);
+      }
+
       viewport.src = "${fullScramPrefix}" + encoded;
       viewport.style.display = "block";
     }
@@ -217,10 +245,10 @@ const lyraAppHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
+  fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
 
-// 4. Subfolder wrapper template
-const pageTemplate = `<!DOCTYPE html>
+  // 5. Subfolder wrapper template
+  const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -236,40 +264,40 @@ const pageTemplate = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// 5. Generate 5,000 subpaths
-const TOTAL_PAGES = 5000;
-const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+  // 6. Generate 5,000 subpaths
+  const TOTAL_PAGES = 5000;
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
-function getRandomSegment(minLen = 4, maxLen = 10) {
-  const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
-  let seg = "";
-  for (let i = 0; i < len; i++) seg += chars.charAt(Math.floor(Math.random() * chars.length));
-  return seg;
-}
+  function getRandomSegment(minLen = 4, maxLen = 10) {
+    const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
+    let seg = "";
+    for (let i = 0; i < len; i++) seg += chars.charAt(Math.floor(Math.random() * chars.length));
+    return seg;
+  }
 
-function getNestedPath(minSegments = 2, maxSegments = 4) {
-  const depth = Math.floor(Math.random() * (maxSegments - minSegments + 1)) + minSegments;
-  const segs = [];
-  for (let i = 0; i < depth; i++) segs.push(getRandomSegment(4, 10));
-  return segs.join("/");
-}
+  function getNestedPath(minSegments = 2, maxSegments = 4) {
+    const depth = Math.floor(Math.random() * (maxSegments - minSegments + 1)) + minSegments;
+    const segs = [];
+    for (let i = 0; i < depth; i++) segs.push(getRandomSegment(4, 10));
+    return segs.join("/");
+  }
 
-const uniquePaths = new Set();
-while (uniquePaths.size < TOTAL_PAGES) {
-  uniquePaths.add(getNestedPath(2, 4));
-}
+  const uniquePaths = new Set();
+  while (uniquePaths.size < TOTAL_PAGES) {
+    uniquePaths.add(getNestedPath(2, 4));
+  }
 
-let masterLinksHtml = "";
+  let masterLinksHtml = "";
 
-for (const nestedPath of uniquePaths) {
-  const folderPath = path.join(distDir, nestedPath);
-  fs.mkdirSync(folderPath, { recursive: true });
-  fs.writeFileSync(path.join(folderPath, "index.html"), pageTemplate);
-  masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
-}
+  for (const nestedPath of uniquePaths) {
+    const folderPath = path.join(distDir, nestedPath);
+    fs.mkdirSync(folderPath, { recursive: true });
+    fs.writeFileSync(path.join(folderPath, "index.html"), pageTemplate);
+    masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
+  }
 
-// 6. Directory index
-const masterIndexHtml = `<!DOCTYPE html>
+  // 7. Directory index dashboard
+  const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -318,5 +346,8 @@ const masterIndexHtml = `<!DOCTYPE html>
 </body>
 </html>`;
 
-fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
-console.log("Build complete.");
+  fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
+  console.log("Build complete.");
+}
+
+runBuild();
