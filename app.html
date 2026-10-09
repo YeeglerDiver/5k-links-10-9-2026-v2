@@ -5,11 +5,48 @@
   <base href="/5k-links-10-9-2026-v2/">
   <script>
     (function() {
-      const WISP_ENDPOINT = "wss://wisp.mercurywork.shop/";
+      const REPO_PREFIX = "/5k-links-10-9-2026-v2/";
+      const UPSTREAM = "https://lytothera.govt.hu";
+      
+      // Auto-fallback for fetch
+      const origFetch = window.fetch;
+      window.fetch = async function(...args) {
+        let url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
+        
+        // Mock non-existent API endpoints
+        if (url.includes("/5k-links-10-9-2026-v2/api/presence") || url.includes("/5k-links-10-9-2026-v2/api/stuff")) {
+          return new Response(JSON.stringify({ ok: true, data: [] }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" }
+          });
+        }
+
+        // Redirect 404 asset chunks and images to upstream origin
+        if (url.startsWith(window.location.origin) && !url.includes(REPO_PREFIX)) {
+          const relativePath = url.replace(window.location.origin, "");
+          if (relativePath.startsWith("/5k-links-10-9-2026-v2/assets/") || relativePath.startsWith("/5k-links-10-9-2026-v2/b/") || relativePath.startsWith("/5k-links-10-9-2026-v2/!cover!/")) {
+            url = UPSTREAM + relativePath;
+            if (typeof args[0] === "string") args[0] = url;
+            else args[0].url = url;
+          }
+        }
+        
+        try {
+          const res = await origFetch.apply(this, args);
+          if (res.status === 404 && (url.includes("/5k-links-10-9-2026-v2/assets/") || url.includes("/5k-links-10-9-2026-v2/b/") || url.includes("/5k-links-10-9-2026-v2/!cover!/"))) {
+            const upUrl = UPSTREAM + url.substring(url.indexOf("/5k-links-10-9-2026-v2/assets/"));
+            return origFetch(upUrl);
+          }
+          return res;
+        } catch (e) {
+          return origFetch.apply(this, args);
+        }
+      };
+
+      // Set Wisp default
       try {
-        localStorage.setItem("wisp-server", WISP_ENDPOINT);
-        localStorage.setItem("bare-server", WISP_ENDPOINT);
-        localStorage.setItem("baremux-transport", "epoxy");
+        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
       } catch(e) {}
     })();
   </script>
@@ -66,10 +103,10 @@
     <script>
       (function () {
         const peakUrls = [
-          "/assets/images/peaks/hachii.webp",
-          "/assets/images/peaks/kona.webp",
-          "/assets/images/peaks/osa.webp",
-          "/assets/images/peaks/azu.webp",
+          "/5k-links-10-9-2026-v2/assets/images/peaks/hachii.webp",
+          "/5k-links-10-9-2026-v2/assets/images/peaks/kona.webp",
+          "/5k-links-10-9-2026-v2/assets/images/peaks/osa.webp",
+          "/5k-links-10-9-2026-v2/assets/images/peaks/azu.webp",
         ];
         let previousIndex = -1;
         try {
