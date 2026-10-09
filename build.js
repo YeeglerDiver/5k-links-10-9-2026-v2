@@ -14,24 +14,17 @@ const repoName = process.env.GITHUB_REPOSITORY
   : "5k-links-10-9-2026-v2";
 const repoPrefix = `/${repoName}/`;
 const fullScramPrefix = `${repoPrefix}scram/`;
+const TARGET_WISP = "wss://wisp.mercurywork.shop/";
 
-// 1. Download and extract the pure client-side build package
-console.log("Downloading static client runtime...");
-const tarPath = path.join(process.cwd(), "temp.tar.gz");
+// 1. Fetch the working Scramjet client runtime
+console.log("1. Pulling Scramjet client core...");
+const tarPath = path.join(process.cwd(), "temp_core.tar.gz");
 execSync(`curl -sL "https://codeload.github.com/scientific-studying/svg/tar.gz/refs/heads/main" -o "${tarPath}"`);
 execSync(`tar -xzf "${tarPath}" -C "${distDir}" --strip-components=1`);
 fs.rmSync(tarPath, { force: true });
 
-// 2. Rename root index.html to app.html so subfolder iframes can embed it
-const origHtml = path.join(distDir, "index.html");
-const appShellHtml = path.join(distDir, "app.html");
-if (fs.existsSync(origHtml)) {
-  fs.renameSync(origHtml, appShellHtml);
-}
-
-// 3. Patch Scramjet prefix (/scram/ -> /<repoName>/scram/) across runtime files
+// 2. Patch Service Worker & Scramjet prefixes
 const prefixRegex = /(['"`])\/scram\//g;
-
 const swPath = path.join(distDir, "sw.js");
 if (fs.existsSync(swPath)) {
   let swCode = fs.readFileSync(swPath, "utf8");
@@ -39,37 +32,14 @@ if (fs.existsSync(swPath)) {
   fs.writeFileSync(swPath, swCode);
 }
 
-// 4. Overwrite hardcoded endpoints with our active Wisp backend
-const TARGET_WISP_WS = "wss://wisp.mercurywork.shop/";
-const TARGET_WISP_HTTP = "https://wisp.mercurywork.shop/";
-
-const deadDomains = [
-  "21baseballacademy.com",
-  "k12-nj2-portal.educationate.space",
-  "k12-nj1-portal.khanlearning.art",
-  "k12-na-east1-portal.johnsclasslearning.store",
-  "new-server.baylib.top"
-];
-
 const assetsDir = path.join(distDir, "assets");
 if (fs.existsSync(assetsDir)) {
   for (const file of fs.readdirSync(assetsDir)) {
     if (file.endsWith(".js") || file.endsWith(".json")) {
       const p = path.join(assetsDir, file);
       let content = fs.readFileSync(p, "utf8");
-
-      // Patch scram prefix
       content = content.replace(prefixRegex, `$1${fullScramPrefix}`);
-
-      // Overwrite dead domains with the working Wisp server
-      for (const dead of deadDomains) {
-        content = content.split(`wss://${dead}/ws/`).join(TARGET_WISP_WS);
-        content = content.split(`wss://${dead}/ws`).join(TARGET_WISP_WS);
-        content = content.split(`wss://${dead}`).join(TARGET_WISP_WS);
-        content = content.split(`https://${dead}`).join(TARGET_WISP_HTTP);
-        content = content.split(dead).join("wisp.mercurywork.shop");
-      }
-
+      content = content.replace(/wss?:\/\/[a-zA-Z0-9.-]+\/wisp\/?/g, TARGET_WISP);
       fs.writeFileSync(p, content);
     }
   }
@@ -77,45 +47,289 @@ if (fs.existsSync(assetsDir)) {
 
 const scramjetAll = path.join(distDir, "runtime", "scramjet", "scramjet.all.js");
 if (fs.existsSync(scramjetAll)) {
-  let scramjetCode = fs.readFileSync(scramjetAll, "utf8");
-  scramjetCode = scramjetCode.replace(prefixRegex, `$1${fullScramPrefix}`);
-  fs.writeFileSync(scramjetAll, scramjetCode);
+  let scramCode = fs.readFileSync(scramjetAll, "utf8");
+  scramCode = scramCode.replace(prefixRegex, `$1${fullScramPrefix}`);
+  fs.writeFileSync(scramjetAll, scramCode);
 }
 
-// 5. Inject auth shim into app.html so pre-fetch session requests return clean 200s
-if (fs.existsSync(appShellHtml)) {
-  let htmlCode = fs.readFileSync(appShellHtml, "utf8");
-  htmlCode = htmlCode.replace(prefixRegex, `$1${fullScramPrefix}`);
+// 3. Create the Lyra-styled client app interface (app.html)
+const lyraAppHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>lyra</title>
+  <base href="${repoPrefix}">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d11;
+      color: #e4e4e7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-x: hidden;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+    }
+    .badge {
+      background: #1f1f23;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-sync {
+      background: #18181b;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      max-width: 680px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .avatar-box {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+    .avatar-box svg {
+      width: 38px;
+      height: 38px;
+      fill: #71717a;
+    }
+    .search-wrapper {
+      width: 100%;
+      margin-bottom: 24px;
+    }
+    .search-input {
+      width: 100%;
+      background: #121216;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #fafafa;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input:focus {
+      border-color: #52525b;
+      box-shadow: 0 0 0 2px rgba(82, 82, 91, 0.3);
+    }
+    .section-title {
+      align-self: flex-start;
+      font-size: 12px;
+      color: #71717a;
+      margin-bottom: 12px;
+      text-transform: lowercase;
+    }
+    .bookmarks {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      width: 100%;
+    }
+    .bookmark-card {
+      background: #141418;
+      border: 1px solid #222227;
+      border-radius: 14px;
+      padding: 16px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      color: #a1a1aa;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .bookmark-card:hover {
+      background: #1f1f24;
+      color: #fff;
+      transform: translateY(-2px);
+    }
+    .icon-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #1d1d22;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .bookmark-name {
+      font-size: 12px;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 24px;
+      font-size: 12px;
+      color: #52525b;
+    }
+    footer a {
+      color: #71717a;
+      text-decoration: none;
+      margin-left: 12px;
+    }
+    footer a:hover { color: #d4d4d8; }
+    #viewport {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      border: none; background: #000; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="badge">lyraaaa /ᐠ - ˕ -マ</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sync" onclick="alert('Client mode active: connected to Wisp')">cloud sync</button>
+    </div>
+  </header>
 
-  const authShim = `
+  <main>
+    <div class="avatar-box">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+    </div>
+
+    <form class="search-wrapper" id="search-form">
+      <input type="text" id="search-bar" class="search-input" placeholder="1 update per year" autocomplete="off" />
+    </form>
+
+    <div class="section-title">bookmarks</div>
+    <div class="bookmarks">
+      <div class="bookmark-card" data-url="https://mangadex.org">
+        <div class="icon-circle">m</div>
+        <div class="bookmark-name">mangas</div>
+      </div>
+      <div class="bookmark-card" data-url="https://now.gg">
+        <div class="icon-circle">🎮</div>
+        <div class="bookmark-name">games</div>
+      </div>
+      <div class="bookmark-card" data-url="https://aniwatchtv.to">
+        <div class="icon-circle">⛩</div>
+        <div class="bookmark-name">anime</div>
+      </div>
+      <div class="bookmark-card" data-url="https://archiveofourown.org">
+        <div class="icon-circle">a</div>
+        <div class="bookmark-name">ao3</div>
+      </div>
+      <div class="bookmark-card" data-url="https://youtube.com">
+        <div class="icon-circle">y</div>
+        <div class="bookmark-name">youtube</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div>~ client engine: scramjet / wisp</div>
+    <div>
+      <a href="javascript:void(0)" onclick="location.reload()">reload</a>
+    </div>
+  </footer>
+
+  <iframe id="viewport"></iframe>
+
+  <script src="${repoPrefix}runtime/scramjet/scramjet.all.js"></script>
   <script>
-    (function() {
-      const origFetch = window.fetch;
-      window.fetch = async function(...args) {
-        const url = typeof args[0] === "string" ? args[0] : (args[0] && args[0].url) || "";
-        if (url.includes("/api/auth/session")) {
-          return new Response(JSON.stringify({ user: null, authenticated: false }), {
-            status: 200,
-            headers: { "Content-Type": "application/json" }
-          });
+    const searchForm = document.getElementById("search-form");
+    const searchBar = document.getElementById("search-bar");
+    const viewport = document.getElementById("viewport");
+
+    // Initialize Service Worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" })
+        .catch(err => console.error("SW Registration Error:", err));
+    }
+
+    try {
+      localStorage.setItem("wisp-server", "${TARGET_WISP}");
+      localStorage.setItem("bare-server", "${TARGET_WISP}");
+    } catch(e) {}
+
+    function launchUrl(rawUrl) {
+      let target = rawUrl.trim();
+      if (!target.startsWith("http://") && !target.startsWith("https://")) {
+        if (target.includes(".") && !target.includes(" ")) {
+          target = "https://" + target;
+        } else {
+          target = "https://www.google.com/search?q=" + encodeURIComponent(target);
         }
-        return origFetch.apply(this, args);
-      };
-    })();
-  </script>`;
+      }
+      
+      const encoded = window.__scramjet$config 
+        ? window.__scramjet$config.codec.encode(target) 
+        : encodeURIComponent(target);
 
-  htmlCode = htmlCode.replace(/<head([^>]*)>/i, `<head$1>\n${authShim}`);
-  fs.writeFileSync(appShellHtml, htmlCode);
-}
+      viewport.src = "${fullScramPrefix}" + encoded;
+      viewport.style.display = "block";
+    }
 
-// 6. Subdirectory wrapper template
+    searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (searchBar.value) launchUrl(searchBar.value);
+    });
+
+    document.querySelectorAll(".bookmark-card").forEach(card => {
+      card.addEventListener("click", () => {
+        launchUrl(card.getAttribute("data-url"));
+      });
+    });
+  </script>
+</body>
+</html>`;
+
+fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
+
+// 4. Subfolder wrapper template
 const pageTemplate = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>App</title>
-  <link rel="icon" type="image/png" href="${repoPrefix}branding/lucide.png">
   <style>
     html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
     iframe { width: 100%; height: 100%; border: none; display: block; }
@@ -126,22 +340,22 @@ const pageTemplate = `<!DOCTYPE html>
 </body>
 </html>`;
 
-// 7. Generate 5,000 nested subdirectories
+// 5. Generate 5,000 unique paths
 const TOTAL_PAGES = 5000;
 const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
 
 function getRandomSegment(minLen = 4, maxLen = 10) {
-  const length = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
-  let segment = "";
-  for (let i = 0; i < length; i++) segment += chars.charAt(Math.floor(Math.random() * chars.length));
-  return segment;
+  const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
+  let seg = "";
+  for (let i = 0; i < len; i++) seg += chars.charAt(Math.floor(Math.random() * chars.length));
+  return seg;
 }
 
 function getNestedPath(minSegments = 2, maxSegments = 4) {
   const depth = Math.floor(Math.random() * (maxSegments - minSegments + 1)) + minSegments;
-  const segments = [];
-  for (let i = 0; i < depth; i++) segments.push(getRandomSegment(4, 10));
-  return segments.join("/");
+  const segs = [];
+  for (let i = 0; i < depth; i++) segs.push(getRandomSegment(4, 10));
+  return segs.join("/");
 }
 
 const uniquePaths = new Set();
@@ -158,19 +372,18 @@ for (const nestedPath of uniquePaths) {
   masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
 }
 
-// 8. Main directory dashboard
+// 6. Directory Index Dashboard
 const masterIndexHtml = `<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Directory Index</title>
-  <link rel="icon" type="image/png" href="${repoPrefix}branding/lucide.png">
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
     body {
       background: #0d1117; color: #c9d1d9;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
       padding: 40px 20px; display: flex; flex-direction: column; align-items: center;
     }
     header { text-align: center; margin-bottom: 28px; max-width: 650px; width: 100%; }
@@ -210,4 +423,4 @@ const masterIndexHtml = `<!DOCTYPE html>
 </html>`;
 
 fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
-console.log("Client build and domain patch completed successfully.");
+console.log("Build complete.");
