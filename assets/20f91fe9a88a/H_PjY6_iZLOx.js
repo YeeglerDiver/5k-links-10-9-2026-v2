@@ -1,1 +1,0 @@
-var x5cdb5660dda=Object['defineProperty'],x5cdb5660ddb=(b,c)=>{let d={};for(var f in b)x5cdb5660dda(d,f,{'get':b[f],'enumerable':!0x0});return c||x5cdb5660dda(d,Symbol['toStringTag'],{'value':'Module'}),d;};export{x5cdb5660ddb as t};

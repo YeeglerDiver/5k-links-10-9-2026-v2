@@ -1,158 +1,267 @@
-<!doctype html>
-<html lang="en" dir="ltr" prefix="og: https://ogp.me/ns#">
-  <head>
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>lyra</title>
   <base href="/5k-links-10-9-2026-v2/">
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d0d11;
+      color: #e4e4e7;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      justify-content: space-between;
+      overflow-x: hidden;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 16px 24px;
+    }
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 18px;
+      letter-spacing: -0.5px;
+    }
+    .badge {
+      background: #1f1f23;
+      padding: 4px 10px;
+      border-radius: 9999px;
+      font-size: 13px;
+    }
+    .top-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .btn-sync {
+      background: #18181b;
+      border: 1px solid #27272a;
+      color: #a1a1aa;
+      padding: 6px 14px;
+      border-radius: 9999px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    main {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+      max-width: 680px;
+      margin: 0 auto;
+      width: 100%;
+    }
+    .avatar-box {
+      width: 80px;
+      height: 80px;
+      border-radius: 16px;
+      background: #18181b;
+      border: 1px solid #27272a;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      margin-bottom: 28px;
+    }
+    .avatar-box svg {
+      width: 38px;
+      height: 38px;
+      fill: #71717a;
+    }
+    .search-wrapper {
+      width: 100%;
+      margin-bottom: 24px;
+    }
+    .search-input {
+      width: 100%;
+      background: #121216;
+      border: 1px solid #27272a;
+      border-radius: 12px;
+      padding: 14px 18px;
+      color: #fafafa;
+      font-size: 15px;
+      outline: none;
+      transition: border-color 0.15s, box-shadow 0.15s;
+    }
+    .search-input:focus {
+      border-color: #52525b;
+      box-shadow: 0 0 0 2px rgba(82, 82, 91, 0.3);
+    }
+    .section-title {
+      align-self: flex-start;
+      font-size: 12px;
+      color: #71717a;
+      margin-bottom: 12px;
+      text-transform: lowercase;
+    }
+    .bookmarks {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 12px;
+      width: 100%;
+    }
+    .bookmark-card {
+      background: #141418;
+      border: 1px solid #222227;
+      border-radius: 14px;
+      padding: 16px 8px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 8px;
+      cursor: pointer;
+      text-decoration: none;
+      color: #a1a1aa;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .bookmark-card:hover {
+      background: #1f1f24;
+      color: #fff;
+      transform: translateY(-2px);
+    }
+    .icon-circle {
+      width: 36px;
+      height: 36px;
+      border-radius: 50%;
+      background: #1d1d22;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 600;
+      font-size: 14px;
+    }
+    .bookmark-name {
+      font-size: 12px;
+    }
+    footer {
+      display: flex;
+      justify-content: space-between;
+      padding: 16px 24px;
+      font-size: 12px;
+      color: #52525b;
+    }
+    footer a {
+      color: #71717a;
+      text-decoration: none;
+      margin-left: 12px;
+    }
+    footer a:hover { color: #d4d4d8; }
+    #viewport {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; width: 100vw; height: 100vh;
+      border: none; background: #000; z-index: 100;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <span class="badge">lyraaaa /ᐠ - ˕ -マ</span>
+    </div>
+    <div class="top-actions">
+      <button class="btn-sync" onclick="alert('Client mode active: connected to Wisp')">cloud sync</button>
+    </div>
+  </header>
+
+  <main>
+    <div class="avatar-box">
+      <svg viewBox="0 0 24 24"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 3c1.66 0 3 1.34 3 3s-1.34 3-3 3-3-1.34-3-3 1.34-3 3-3zm0 14.2c-2.5 0-4.71-1.28-6-3.22.03-1.99 4-3.08 6-3.08 1.99 0 5.97 1.09 6 3.08-1.29 1.94-3.5 3.22-6 3.22z"/></svg>
+    </div>
+
+    <form class="search-wrapper" id="search-form">
+      <input type="text" id="search-bar" class="search-input" placeholder="1 update per year" autocomplete="off" />
+    </form>
+
+    <div class="section-title">bookmarks</div>
+    <div class="bookmarks">
+      <div class="bookmark-card" data-url="https://mangadex.org">
+        <div class="icon-circle">m</div>
+        <div class="bookmark-name">mangas</div>
+      </div>
+      <div class="bookmark-card" data-url="https://now.gg">
+        <div class="icon-circle">🎮</div>
+        <div class="bookmark-name">games</div>
+      </div>
+      <div class="bookmark-card" data-url="https://aniwatchtv.to">
+        <div class="icon-circle">⛩</div>
+        <div class="bookmark-name">anime</div>
+      </div>
+      <div class="bookmark-card" data-url="https://archiveofourown.org">
+        <div class="icon-circle">a</div>
+        <div class="bookmark-name">ao3</div>
+      </div>
+      <div class="bookmark-card" data-url="https://youtube.com">
+        <div class="icon-circle">y</div>
+        <div class="bookmark-name">youtube</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div>~ client engine: scramjet / wisp</div>
+    <div>
+      <a href="javascript:void(0)" onclick="location.reload()">reload</a>
+    </div>
+  </footer>
+
+  <iframe id="viewport"></iframe>
+
+  <script src="/5k-links-10-9-2026-v2/runtime/scramjet/scramjet.all.js"></script>
   <script>
-    (function() {
-      try {
-        localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
-        localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
-      } catch(e) {}
-    })();
-  </script>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <meta http-equiv="X-UA-Compatible" content="IE=Edge,chrome=IE7" />
-    <title>Coursera | Online Courses, Certificates, & Degrees</title>
-    <style>
-      :root {
-        --bg-body: #050505;
-      }
-      [data-theme="catppuccin"] {
-        --bg-body: #1e1e2e;
-      }
-      [data-theme="dracula"] {
-        --bg-body: #282a36;
-      }
-      [data-theme="synthwave"] {
-        --bg-body: #13111c;
-      }
-      [data-theme="tokyo night"] {
-        --bg-body: #1a1b26;
-      }
-      [data-theme="everforest"] {
-        --bg-body: #272e33;
-      }
-      [data-theme="kanagawa"] {
-        --bg-body: #1f1f28;
-      }
-      [data-theme="solarized"] {
-        --bg-body: #002b36;
-      }
-      [data-theme="sakura"] {
-        --bg-body: #120a10;
-      }
-      body {
-        background: var(--bg-body);
-      }
-    </style>
-    <script>
-      (function () {
-        const storedTheme = localStorage.getItem("theme");
-        if (storedTheme && storedTheme !== "default")
-          document.documentElement.setAttribute("data-theme", storedTheme);
-      })();
-    </script>
-    <link rel="icon" href="!!/https:/d3njjcbhbojbot.cloudfront.net/web/images/favicons/apple-touch-icon-v2-57x57.png" type="image/x-icon" />
-    <link rel="dns-prefetch" href="https://fonts.googleapis.com" />
-    <link rel="dns-prefetch" href="https://fonts.gstatic.com" />
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link rel="preload" href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" as="style" onload="this.onload=null;this.rel='stylesheet';" />
-    <noscript><link href="https://fonts.googleapis.com/css2?family=Lexend:wght@100..900&display=swap" rel="stylesheet" /></noscript>
-    <script>
-      (function () {
-        const peakUrls = [
-          "/5k-links-10-9-2026-v2/assets/images/peaks/hachii.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/kona.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/osa.webp",
-          "/5k-links-10-9-2026-v2/assets/images/peaks/azu.webp",
-        ];
-        let previousIndex = -1;
-        try {
-          const storedIndex = localStorage.getItem("lyra-title-peak-index");
-          if (storedIndex !== null) previousIndex = Number(storedIndex);
-        } catch {}
+    const searchForm = document.getElementById("search-form");
+    const searchBar = document.getElementById("search-bar");
+    const viewport = document.getElementById("viewport");
 
-        let nextIndex = Math.floor(Math.random() * peakUrls.length);
-        if (peakUrls.length > 1 && nextIndex === previousIndex) {
-          nextIndex =
-            (nextIndex + 1 + Math.floor(Math.random() * (peakUrls.length - 1))) %
-            peakUrls.length;
+    // Initialize Service Worker
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("/5k-links-10-9-2026-v2/sw.js", { scope: "/5k-links-10-9-2026-v2/scram/" })
+        .catch(err => console.error("SW Registration Error:", err));
+    }
+
+    try {
+      localStorage.setItem("wisp-server", "wss://wisp.mercurywork.shop/");
+      localStorage.setItem("bare-server", "wss://wisp.mercurywork.shop/");
+    } catch(e) {}
+
+    function launchUrl(rawUrl) {
+      let target = rawUrl.trim();
+      if (!target.startsWith("http://") && !target.startsWith("https://")) {
+        if (target.includes(".") && !target.includes(" ")) {
+          target = "https://" + target;
+        } else {
+          target = "https://www.google.com/search?q=" + encodeURIComponent(target);
         }
+      }
+      
+      const encoded = window.__scramjet$config 
+        ? window.__scramjet$config.codec.encode(target) 
+        : encodeURIComponent(target);
 
-        document.documentElement.dataset.peakIndex = String(nextIndex);
-        const preload = document.createElement("link");
-        preload.rel = "preload";
-        preload.as = "image";
-        preload.type = "image/webp";
-        preload.href = peakUrls[nextIndex];
-        preload.fetchPriority = "high";
-        document.head.append(preload);
-        try {
-          localStorage.setItem("lyra-title-peak-index", String(nextIndex));
-        } catch {}
-      })();
-    </script>
-    <script>
-      (function () {
-        const recoveryUrl = new URL(window.location.href);
-        let recoveryAttempted = recoveryUrl.searchParams.has("lyra-recovery");
+      viewport.src = "/5k-links-10-9-2026-v2/scram/" + encoded;
+      viewport.style.display = "block";
+    }
 
-        window.__lyraRecoverAsset = function () {
-          if (recoveryAttempted) return;
-          recoveryAttempted = true;
-          const target = new URL(window.location.href);
-          target.searchParams.set("lyra-recovery", "1");
-          window.location.replace(target.href);
-        };
-        window.addEventListener(
-          "vite:preloadError",
-          function (event) {
-            event.preventDefault();
-            window.__lyraRecoverAsset();
-          },
-          { once: true },
-        );
-        window.addEventListener(
-          "error",
-          function (event) {
-            const element = event.target;
-            const tagName = element?.tagName?.toLowerCase();
-            const assetUrl =
-              tagName === "script"
-                ? element.src
-                : tagName === "link" &&
-                    (element.rel === "modulepreload" ||
-                      element.rel === "stylesheet")
-                  ? element.href
-                  : "";
-            if (!assetUrl) return;
-            const failedUrl = new URL(assetUrl, window.location.href);
-            if (
-              failedUrl.origin === window.location.origin &&
-              /^\/assets\/[a-f0-9]{12}\/[^/]+$/.test(failedUrl.pathname)
-            ) {
-              window.__lyraRecoverAsset();
-            }
-          },
-          true,
-        );
-      })();
-    </script>
-    <script type="module" crossorigin src="assets/20f91fe9a88a/UOdLBK0kdg2D.js"></script>
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/H_PjY6_iZLOx.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/BddaZkrO20eG.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/DqtUK8-EIpN6.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/G6bmQJ4LeSaU.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/B3CqrJhTi617.js">
-    <link rel="modulepreload" crossorigin href="assets/20f91fe9a88a/CPZGefi03ZTl.js">
-    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Ds4AInl-voGA.css">
-    <link rel="stylesheet" crossorigin href="assets/20f91fe9a88a/Cks2NftInTfc.css">
-  </head>
-  <body>
-    <noscript>javascript is required... /ᐠ - ˕ -マ</noscript>
-    <main class="meow"></main>
-  </body>
+    searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (searchBar.value) launchUrl(searchBar.value);
+    });
+
+    document.querySelectorAll(".bookmark-card").forEach(card => {
+      card.addEventListener("click", () => {
+        launchUrl(card.getAttribute("data-url"));
+      });
+    });
+  </script>
+</body>
 </html>
