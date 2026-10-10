@@ -165,4 +165,227 @@ async function runBuild() {
     </div>
 
     <form class="search-wrapper" id="search-form">
-      <input type="text" id="search-bar"
+      <input type="text" id="search-bar" class="search-input" placeholder="1 update per year" autocomplete="off" />
+    </form>
+
+    <div class="section-title">bookmarks</div>
+    <div class="bookmarks">
+      <div class="bookmark-card" data-url="https://mangadex.org">
+        <div class="icon-circle">m</div>
+        <div class="bookmark-name">mangas</div>
+      </div>
+      <div class="bookmark-card" data-url="https://now.gg">
+        <div class="icon-circle">🎮</div>
+        <div class="bookmark-name">games</div>
+      </div>
+      <div class="bookmark-card" data-url="https://aniwatchtv.to">
+        <div class="icon-circle">⛩</div>
+        <div class="bookmark-name">anime</div>
+      </div>
+      <div class="bookmark-card" data-url="https://archiveofourown.org">
+        <div class="icon-circle">a</div>
+        <div class="bookmark-name">ao3</div>
+      </div>
+      <div class="bookmark-card" data-url="https://youtube.com">
+        <div class="icon-circle">y</div>
+        <div class="bookmark-name">youtube</div>
+      </div>
+    </div>
+  </main>
+
+  <footer>
+    <div>~ client engine: scramjet / wisp</div>
+    <div><a href="javascript:void(0)" onclick="location.reload()">reload</a></div>
+  </footer>
+
+  <iframe id="viewport"></iframe>
+
+  <script src="${repoPrefix}baremux/index.js"></script>
+  <script src="${repoPrefix}runtime/scramjet/scramjet.all.js"></script>
+  <script>
+    const searchForm = document.getElementById("search-form");
+    const searchBar = document.getElementById("search-bar");
+    const viewport = document.getElementById("viewport");
+    const syncStatus = document.getElementById("sync-status");
+    let isReady = false;
+
+    window.__scramjet$config = {
+      prefix: "${fullScramPrefix}",
+      codec: {
+        encode(str) {
+          if (!str) return str;
+          return encodeURIComponent(
+            str.split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('')
+          );
+        },
+        decode(str) {
+          if (!str) return str;
+          const [input, ...search] = str.split('?');
+          return decodeURIComponent(input)
+            .split('').map((c, i) => i % 2 ? String.fromCharCode(c.charCodeAt(0) ^ 2) : c).join('') + 
+            (search.length ? '?' + search.join('?') : '');
+        }
+      }
+    };
+
+    async function initClient() {
+      try {
+        if ("serviceWorker" in navigator) {
+          await navigator.serviceWorker.register("${repoPrefix}sw.js", { scope: "${fullScramPrefix}" });
+          await navigator.serviceWorker.ready;
+        }
+
+        if (window.BareMux) {
+          const workerUrl = new URL("${repoPrefix}baremux/worker.js", window.location.href).toString();
+          const connection = new BareMux.BareMuxConnection(workerUrl);
+          const wispUrl = (location.protocol === "https:" ? "wss://" : "ws://") + "wisp.mercurywork.shop/";
+          const epoxyUrl = new URL("${repoPrefix}epoxy/index.mjs", window.location.href).toString();
+
+          await connection.setTransport(epoxyUrl, [{ wisp: wispUrl }]);
+        }
+
+        isReady = true;
+        syncStatus.textContent = "cloud sync";
+      } catch (err) {
+        console.error("Init Error:", err);
+        syncStatus.textContent = "ready";
+        isReady = true;
+      }
+    }
+
+    initClient();
+
+    function launchUrl(rawUrl) {
+      let target = rawUrl.trim();
+      if (!target.startsWith("http://") && !target.startsWith("https://")) {
+        if (target.includes(".") && !target.includes(" ")) {
+          target = "https://" + target;
+        } else {
+          target = "https://www.google.com/search?q=" + encodeURIComponent(target);
+        }
+      }
+
+      const encoded = window.__scramjet$config.codec.encode(target);
+      viewport.src = "${fullScramPrefix}" + encoded;
+      viewport.style.display = "block";
+    }
+
+    searchForm.addEventListener("submit", (e) => {
+      e.preventDefault();
+      if (searchBar.value) launchUrl(searchBar.value);
+    });
+
+    document.querySelectorAll(".bookmark-card").forEach(card => {
+      card.addEventListener("click", () => {
+        launchUrl(card.getAttribute("data-url"));
+      });
+    });
+  </script>
+</body>
+</html>`;
+
+  fs.writeFileSync(path.join(distDir, "app.html"), lyraAppHtml, "utf8");
+
+  // 7. Subfolder wrapper template
+  const pageTemplate = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>App</title>
+  <style>
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #000; }
+    iframe { width: 100%; height: 100%; border: none; display: block; }
+  </style>
+</head>
+<body>
+  <iframe src="${repoPrefix}app.html" allow="fullscreen; clipboard-read; clipboard-write"></iframe>
+</body>
+</html>`;
+
+  // 8. Generate 5,000 unique paths
+  const TOTAL_PAGES = 5000;
+  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
+
+  function getRandomSegment(minLen = 4, maxLen = 10) {
+    const len = Math.floor(Math.random() * (maxLen - minLen + 1)) + minLen;
+    let seg = "";
+    for (let i = 0; i < len; i++) seg += chars.charAt(Math.floor(Math.random() * chars.length));
+    return seg;
+  }
+
+  function getNestedPath(minSegments = 2, maxSegments = 4) {
+    const depth = Math.floor(Math.random() * (maxSegments - minSegments + 1)) + minSegments;
+    const segs = [];
+    for (let i = 0; i < depth; i++) segs.push(getRandomSegment(4, 10));
+    return segs.join("/");
+  }
+
+  const uniquePaths = new Set();
+  while (uniquePaths.size < TOTAL_PAGES) {
+    uniquePaths.add(getNestedPath(2, 4));
+  }
+
+  let masterLinksHtml = "";
+  for (const nestedPath of uniquePaths) {
+    const folderPath = path.join(distDir, nestedPath);
+    fs.mkdirSync(folderPath, { recursive: true });
+    fs.writeFileSync(path.join(folderPath, "index.html"), pageTemplate);
+    masterLinksHtml += `<a class="card" href="${repoPrefix}${nestedPath}/">${nestedPath}</a>\n`;
+  }
+
+  // 9. Root Directory Index
+  const masterIndexHtml = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Directory Index</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: #0d1117; color: #c9d1d9;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      padding: 40px 20px; display: flex; flex-direction: column; align-items: center;
+    }
+    header { text-align: center; margin-bottom: 28px; max-width: 650px; width: 100%; }
+    h1 { font-size: 28px; font-weight: 700; color: #f0f6fc; margin-bottom: 8px; }
+    p { color: #8b949e; font-size: 14px; margin-bottom: 20px; }
+    .search-box {
+      width: 100%; padding: 12px 18px; border-radius: 8px; border: 1px solid #30363d;
+      background: #161b22; color: #f0f6fc; font-size: 15px; outline: none;
+    }
+    .search-box:focus { border-color: #58a6ff; box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2); }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 10px; width: 100%; max-width: 1300px; }
+    .card {
+      display: flex; align-items: center; justify-content: center; background: #161b22;
+      border: 1px solid #30363d; border-radius: 6px; padding: 12px; color: #58a6ff;
+      text-decoration: none; font-size: 12px; font-family: monospace; word-break: break-all; text-align: center;
+    }
+    .card:hover { background: #21262d; border-color: #58a6ff; color: #79c0ff; transform: translateY(-2px); }
+    .hidden { display: none !important; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Directory Index</h1>
+    <p>5,000 Nested Endpoints</p>
+    <input type="text" id="filter" class="search-box" placeholder="Quick find path..." autocomplete="off" />
+  </header>
+  <main class="grid" id="link-grid">${masterLinksHtml}</main>
+  <script>
+    const filter = document.getElementById("filter");
+    const links = document.querySelectorAll(".card");
+    filter.addEventListener("input", (e) => {
+      const term = e.target.value.toLowerCase().trim();
+      links.forEach(card => card.classList.toggle("hidden", !card.textContent.toLowerCase().includes(term)));
+    });
+  </script>
+</body>
+</html>`;
+
+  fs.writeFileSync(path.join(distDir, "index.html"), masterIndexHtml);
+  console.log("Build complete.");
+}
+
+runBuild();
